@@ -158,9 +158,9 @@ class infoGAN_digits():
         loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(c, c_hat)
         return loss
 
-    def calc_generator_loss(self, images):
+    def calc_generator_loss(self, fake_result):
         loss_function = tf.keras.losses.BinaryCrossentropy(from_logits=True)
-        loss = loss_function(tf.ones_like(images), images)
+        loss = loss_function(tf.ones_like(fake_result), fake_result)
         return loss
 
     def calc_discriminator_loss(self, real_result, fake_result):
@@ -178,7 +178,7 @@ class infoGAN_digits():
             discriminator_real, _ = self.discriminator(image, training=True)
             c_hat = self.Q(Q_input)
             info_loss = self.calc_info_loss(c, c_hat)
-            generator_loss = self.calc_generator_loss(generator_images)
+            generator_loss = self.calc_generator_loss(discriminator_fake)
             discriminator_loss = self.calc_discriminator_loss(discriminator_real, discriminator_fake)
 
             generator_infoGAN_loss = info_loss + generator_loss
