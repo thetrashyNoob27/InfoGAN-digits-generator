@@ -292,6 +292,8 @@ class infoGAN_digits():
                 plt.imshow(image_list[index])
                 plt.axis("off")
         plt.show()
+        return
+
 
     def debug_dump_model_image(self,fileName):
         digits = [np.random.randint(0, 9) for i in range(25)]
@@ -311,14 +313,16 @@ class infoGAN_digits():
             for r in range(0, image_h_cnt):
                 index = c * image_h_cnt + r
                 ax = plt.subplot(image_w_cnt, image_h_cnt, index + 1)
-                plt.imshow(image_list[index])
+                plt.imshow(image_list[index], cmap='gray', vmin=0, vmax=255)
                 plt.axis("off")
 
         dir_name=os.path.dirname(fileName)
-        if not os.path.exists(dir_name):
+        dir_name=os.path.realpath(dir_name)
+        if os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
         plt.savefig(fileName)
         plt.close()
+        return
 
 
 if __name__=="__main__":
