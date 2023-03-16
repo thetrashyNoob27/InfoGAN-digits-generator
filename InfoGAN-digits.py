@@ -213,8 +213,9 @@ class infoGAN_digits():
                 self._overwrite_print(status)
                 self.save_model()
 
-            dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
-            self.debug_dump_model_image(dump_file_path)
+                if batch_cnt%100==0:
+                    dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
+                    self.debug_dump_model_image(dump_file_path)
 
         return
 
@@ -318,7 +319,7 @@ class infoGAN_digits():
 
         dir_name=os.path.dirname(fileName)
         dir_name=os.path.realpath(dir_name)
-        if os.path.exists(dir_name):
+        if not os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
         plt.savefig(fileName)
         plt.close()
