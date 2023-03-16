@@ -5,6 +5,7 @@ import re
 import matplotlib.pyplot as plt
 from tensorflow_probability import distributions as tfd
 import os
+import sys
 from datetime import datetime
 
 
@@ -33,9 +34,8 @@ class infoGAN_digits():
 
                 self.d1 = tf.keras.layers.Dense(1024, use_bias=False)
                 self.a1 = tf.keras.layers.ReLU()
-                self.b1 = tf.keras.layers.BatchNormalization() \
- \
-                        self.d2 = tf.keras.layers.Dense(7 * 7 * 128, use_bias=False)
+                self.b1 = tf.keras.layers.BatchNormalization()
+                self.d2 = tf.keras.layers.Dense(7 * 7 * 128, use_bias=False)
                 self.a2 = tf.keras.layers.ReLU()
                 self.b2 = tf.keras.layers.BatchNormalization()
                 self.r2 = tf.keras.layers.Reshape([7, 7, 128])
@@ -207,11 +207,13 @@ class infoGAN_digits():
         for epoch in range(0, epochs):
             for batch_cnt, batch_images in enumerate(batch_dataset):
                 info_loss, generator_loss, discriminator_loss = self.train_step(batch_images, batch_size)
-                status = "[epoch:%d/%d batch:%d/%d]info_loss=%.2f,generator_loss=%.2f,discriminator_loss=%.2f" % (
+                status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
                 epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
                 self.save_model()
-            self.debug_peek_model_image()
+
+            dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
+            self.debug_dump_model_image(dump_file_path)
 
         return
 
@@ -290,9 +292,35 @@ class infoGAN_digits():
                 plt.axis("off")
         plt.show()
 
+    def debug_dump_model_image(self,fileName):
+        digits = [np.random.randint(0, 9) for i in range(25)]
+        image_list = []
+        for dig in digits:
+            image_generate = self.generate_image(1, dig)
+            image_generate = image_generate[0][:, :, 0]
+            image_generate=np.array(image_generate)
+
+            image_list.append(image_generate)
+
+        image_w_cnt = 5
+        image_h_cnt = 5
+
+        plt.figure(figsize=(5, 5))
+        for c in range(0, image_w_cnt):
+            for r in range(0, image_h_cnt):
+                index = c * image_h_cnt + r
+                ax = plt.subplot(image_w_cnt, image_h_cnt, index + 1)
+                plt.imshow(image_list[index])
+                plt.axis("off")
+
+        dir_name=os.path.dirname(fileName)
+        if os.path.exists(dir_name) and os.path.isdir(dir_name):
+            os.makedirs(dir_name,exist_ok=True)
+        plt.savefig(fileName,dpi=300)
 
 
 if __name__=="__main__":
     gan=infoGAN_digits()
-    gan.run()
-    
+    dataset = gan.process_dataset()
+    gan.train(dataset,batch_size=64,epochs=100)
+    sys.exit(0)
