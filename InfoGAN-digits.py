@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import tensorflow as tf
 import numpy as np
 
@@ -212,8 +213,8 @@ class infoGAN_digits():
                 self._overwrite_print(status)
                 self.save_model()
 
-            dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
-            self.debug_dump_model_image(dump_file_path)
+        dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
+        self.debug_dump_model_image(dump_file_path)
 
         return
 
@@ -314,7 +315,7 @@ class infoGAN_digits():
                 plt.axis("off")
 
         dir_name=os.path.dirname(fileName)
-        if os.path.exists(dir_name) and os.path.isdir(dir_name):
+        if not os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
         plt.savefig(fileName,dpi=300)
 
