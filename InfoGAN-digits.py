@@ -205,16 +205,18 @@ class infoGAN_digits():
     def train(self, dataset, batch_size=200, epochs=400):
         batch_dataset = tf.data.Dataset.from_tensor_slices(dataset).shuffle(30000).batch(batch_size)
         batch_len = len(batch_dataset)
+        train_cycle=0
         for epoch in range(0, epochs):
             for batch_cnt, batch_images in enumerate(batch_dataset):
+                train_cycle+=1
                 info_loss, generator_loss, discriminator_loss = self.train_step(batch_images, batch_size)
                 status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
                 epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
                 self.save_model()
 
-                if batch_cnt%100==0:
-                    dump_file_path="train_images"+os.sep+"infoGAN-epoch-%d.png" %(epoch)
+                if train_cycle%100==0:
+                    dump_file_path="train_images"+os.sep+"infoGAN-step-%d.png" %(train_cycle)
                     self.debug_dump_model_image(dump_file_path)
 
         return
@@ -272,7 +274,7 @@ class infoGAN_digits():
         ginput = tf.concat([z, c], axis=-1)
         result = self.generator(ginput, training=False)
         result= np.array(result)
-        result = (result + 0.5) * 255
+        result = result*(255/2)+(255/2)
         result=result.astype(int)
         return result
 
