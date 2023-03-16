@@ -271,7 +271,9 @@ class infoGAN_digits():
         z, c = self.generator_input(batch, digit)
         ginput = tf.concat([z, c], axis=-1)
         result = self.generator(ginput, training=False)
+        result= np.array(result)
         result = (result + 0.5) * 255
+        result=result.astype(int)
         return result
 
     def debug_peek_model_image(self):
@@ -309,20 +311,20 @@ class infoGAN_digits():
         image_w_cnt = 5
         image_h_cnt = 5
 
-        plt.figure(figsize=(5, 5))
+        fig,ax=plt.subplots(image_w_cnt, image_h_cnt)
         for c in range(0, image_w_cnt):
             for r in range(0, image_h_cnt):
                 index = c * image_h_cnt + r
-                ax = plt.subplot(image_w_cnt, image_h_cnt, index + 1)
-                plt.imshow(image_list[index], cmap='gray', vmin=0, vmax=255)
-                plt.axis("off")
+                sub_plot=ax[c,r]
+                sub_plot.imshow(image_list[index], cmap='gray', vmin=0, vmax=255)
+                sub_plot.set_yticks([])
+                sub_plot.set_xticks([])
 
         dir_name=os.path.dirname(fileName)
         dir_name=os.path.realpath(dir_name)
         if not os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
-        plt.savefig(fileName)
-        plt.close()
+        fig.savefig(fileName,dpi=300)
         return
 
 
