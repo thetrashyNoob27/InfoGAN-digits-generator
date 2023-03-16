@@ -306,7 +306,7 @@ class infoGAN_digits():
         for dig in digits:
             image_generate = self.generate_image(1, dig)
             image_generate = image_generate[0][:, :, 0]
-            image_generate=np.array(image_generate)
+            image_generate=255-np.array(image_generate)
 
             image_list.append(image_generate)
 
