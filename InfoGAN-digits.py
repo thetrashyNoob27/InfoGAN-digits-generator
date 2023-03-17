@@ -23,7 +23,10 @@ class infoGAN_digits():
                                               generator=self.generator,
                                               discriminator=self.discriminator,
                                               Q=self.Q)
+
         self.checkpoint_path = "checkpoint/"
+        self.checkpoint_file_prefix="infoGAN"
+        self.checkpint_manager = tf.train.CheckpointManager(self.checkpoint, directory=self.checkpoint_path,max_to_keep=10,checkpoint_name=self.checkpoint_file_prefix)
         if not os.path.exists(self.checkpoint_path):
             os.mkdir(self.checkpoint_path)
         return
@@ -213,11 +216,10 @@ class infoGAN_digits():
                 status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
                 epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
-                self.save_model()
-
                 if train_cycle%100==0:
                     dump_file_path="train_images"+os.sep+"infoGAN-step-%d.png" %(train_cycle)
                     self.debug_dump_model_image(dump_file_path)
+                    self.save_model()
 
         return
 
@@ -235,39 +237,16 @@ class infoGAN_digits():
 
     def run(self):
         dataset = self.process_dataset()
-
         self.train(dataset)
         return
 
-    def save_model(self, period=100):
-        try:
-            self._save_model_call_cnt += 1
-        except AttributeError as e:
-            self._save_model_call_cnt = 1
-
-        if self._save_model_call_cnt % period == 0:
-            timeString = datetime.now().strftime("%m_%d_%Y__%H_%M_%S.%f")
-            file_name = self.checkpoint_path + os.sep + "infoGAN_digits_checkpoint_" + timeString
-            self.checkpoint.save(file_name)
+    def save_model(self):
+        self.checkpint_manager.save()
         return
 
     def load_model(self):
-        checkpoint_log_path = file_name = self.checkpoint_path + os.sep + "checkpoint"
-        if not os.path.exists(checkpoint_log_path):
-            return
-        with open(checkpoint_log_path, 'r') as log_pointer:
-            lines = log_pointer.read()
-            infoLine = lines.split('\n')[0]
-            infoRe = re.compile("model_checkpoint_path: \"(.+)\"")
-            try:
-                last_checkpoint_file_name = infoRe.findall(infoLine)[0]
-            except IndexError as e:
-                return
-            checkpoint_file_path = self.checkpoint_path + os.sep + last_checkpoint_file_name
-
-        self.checkpoint.restore(checkpoint_file_path)
-        print("load checkpoint:%s" % (checkpoint_file_path))
-        pass
+        self.checkpint_manager.restore_or_initialize()
+        return
 
     def generate_image(self, batch, digit):
         z, c = self.generator_input(batch, digit)
@@ -301,7 +280,7 @@ class infoGAN_digits():
 
 
     def debug_dump_model_image(self,fileName):
-        digits = [np.random.randint(0, 9) for i in range(25)]
+        digits = [int(i/10) for i in range(100)]
         image_list = []
         for dig in digits:
             image_generate = self.generate_image(1, dig)
@@ -310,10 +289,10 @@ class infoGAN_digits():
 
             image_list.append(image_generate)
 
-        image_w_cnt = 5
-        image_h_cnt = 5
+        image_w_cnt = 10
+        image_h_cnt = 10
 
-        fig,ax=plt.subplots(image_w_cnt, image_h_cnt)
+        fig,ax=plt.subplots(image_w_cnt, image_h_cnt,figsize=(10, 10))
         for c in range(0, image_w_cnt):
             for r in range(0, image_h_cnt):
                 index = c * image_h_cnt + r
@@ -326,12 +305,13 @@ class infoGAN_digits():
         dir_name=os.path.realpath(dir_name)
         if not os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
-        fig.savefig(fileName,dpi=300)
+        fig.savefig(fileName,dpi=600)
         return
 
 
 if __name__=="__main__":
     gan=infoGAN_digits()
+    gan.load_model()
     dataset = gan.process_dataset()
     gan.train(dataset,batch_size=64,epochs=100)
     sys.exit(0)
