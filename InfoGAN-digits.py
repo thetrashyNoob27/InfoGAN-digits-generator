@@ -306,6 +306,7 @@ class infoGAN_digits():
         if not os.path.exists(dir_name):
             os.makedirs(dir_name,exist_ok=True)
         fig.savefig(fileName,dpi=600)
+        plt.close(fig)
         return
 
 
