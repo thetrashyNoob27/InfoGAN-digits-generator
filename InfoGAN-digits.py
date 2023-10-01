@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-import tensorflow as tf
-import numpy as np
-
-import re
 import matplotlib.pyplot as plt
-from tensorflow_probability import distributions as tfd
+import numpy as np
 import os
+import re
 import sys
-from datetime import datetime
+import tensorflow as tf
+from tensorflow_probability import distributions as tfd
 
 
 class infoGAN_digits():
