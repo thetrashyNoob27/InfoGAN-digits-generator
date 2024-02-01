@@ -29,9 +29,6 @@ def build_generator(latent_dim, num_continuous, num_categories):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Activation('relu')(x)
 
-    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
     # upsample to 14x14
     x = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
         2, 2), padding='same')(x)
@@ -54,9 +51,10 @@ def build_discriminator(num_continuous, num_categories):
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
     x = tf.keras.layers.Conv2D(128, (4, 4), strides=(
-        2, 2), padding='same')(image_input)
+        2, 2), padding='same')(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
 
     x = tf.keras.layers.Flatten()(x)
 
@@ -65,7 +63,7 @@ def build_discriminator(num_continuous, num_categories):
     # Auxiliary outputs
     x = tf.keras.layers.Dense(128)(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear')(x)
@@ -89,7 +87,7 @@ if __name__ == "__main__":
     os.nice(19)
     # Dimensions
     latent_dim = 62
-    num_continuous = 2
+    num_continuous = 1
     num_categories = 10
 
     # Build and compile the generator, discriminator, and InfoGAN models
@@ -135,7 +133,6 @@ if __name__ == "__main__":
     half_batch = batch_size // 2
 
     # Training loop
-    plot_process = None
     REPORT_PERIOD_SEC = 60
     next_report_time = time.monotonic() + REPORT_PERIOD_SEC
     for epoch in range(epochs):
@@ -199,6 +196,7 @@ if __name__ == "__main__":
 
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories], verbose=0)
+            generated_images = -generated_images
 
 
             # print(generated_images.shape)#(100, 28, 28, 1)
@@ -216,11 +214,6 @@ if __name__ == "__main__":
                 fileName = "infoGAN-%d.png" % (epoch)
                 fig.savefig(fileName, dpi=600)
                 return
-
-
-            if plot_process is not None:
-                plot_process.join()
-                del plot_process
             plot_process = multiprocessing.Process(target=_plot, args=(
                 generated_images, epoch,))
             plot_process.start()
