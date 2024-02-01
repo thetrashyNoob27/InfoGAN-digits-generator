@@ -6,6 +6,7 @@ import re
 import sys
 import tensorflow as tf
 from tensorflow_probability import distributions as tfd
+import multiprocessing
 
 
 class infoGAN_digits():
@@ -23,8 +24,9 @@ class infoGAN_digits():
                                               Q=self.Q)
 
         self.checkpoint_path = "checkpoint/"
-        self.checkpoint_file_prefix="infoGAN"
-        self.checkpint_manager = tf.train.CheckpointManager(self.checkpoint, directory=self.checkpoint_path,max_to_keep=10,checkpoint_name=self.checkpoint_file_prefix)
+        self.checkpoint_file_prefix = "infoGAN"
+        self.checkpint_manager = tf.train.CheckpointManager(
+            self.checkpoint, directory=self.checkpoint_path, max_to_keep=10, checkpoint_name=self.checkpoint_file_prefix)
         if not os.path.exists(self.checkpoint_path):
             os.mkdir(self.checkpoint_path)
         return
@@ -42,11 +44,13 @@ class infoGAN_digits():
                 self.b2 = tf.keras.layers.BatchNormalization()
                 self.r2 = tf.keras.layers.Reshape([7, 7, 128])
 
-                self.c3 = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same")
+                self.c3 = tf.keras.layers.Conv2DTranspose(
+                    64, (4, 4), strides=(2, 2), padding="same")
                 self.a3 = tf.keras.layers.ReLU()
                 self.b3 = tf.keras.layers.BatchNormalization()
 
-                self.c4 = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding="same")
+                self.c4 = tf.keras.layers.Conv2DTranspose(
+                    1, (4, 4), strides=(2, 2), padding="same")
 
             def call(self, x, training=True):
                 x = self.d1(x)
@@ -76,10 +80,12 @@ class infoGAN_digits():
             def __init__(self):
                 super(Discriminator, self).__init__()
 
-                self.c1 = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same")
+                self.c1 = tf.keras.layers.Conv2D(
+                    64, (4, 4), strides=(2, 2), padding="same")
                 self.a1 = tf.keras.layers.LeakyReLU()
 
-                self.c2 = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")
+                self.c2 = tf.keras.layers.Conv2D(
+                    128, (4, 4), strides=(2, 2), padding="same")
                 self.a2 = tf.keras.layers.LeakyReLU()
                 self.b2 = tf.keras.layers.BatchNormalization()
                 self.f2 = tf.keras.layers.Flatten()
@@ -156,7 +162,8 @@ class infoGAN_digits():
         return z, c
 
     def calc_info_loss(self, c, c_hat):
-        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(c, c_hat)
+        loss = tf.keras.losses.CategoricalCrossentropy(
+            from_logits=True)(c, c_hat)
         return loss
 
     def calc_generator_loss(self, fake_result):
@@ -174,13 +181,16 @@ class infoGAN_digits():
     def train_step(self, image, batch_size):
         with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
             z, c = self.generator_input(batch_size)
-            generator_images = gan.generator(tf.concat([z, c], axis=-1), training=True)
-            discriminator_fake, Q_input = self.discriminator(generator_images, training=True)
+            generator_images = gan.generator(
+                tf.concat([z, c], axis=-1), training=True)
+            discriminator_fake, Q_input = self.discriminator(
+                generator_images, training=True)
             discriminator_real, _ = self.discriminator(image, training=True)
             c_hat = self.Q(Q_input)
             info_loss = self.calc_info_loss(c, c_hat)
             generator_loss = self.calc_generator_loss(discriminator_fake)
-            discriminator_loss = self.calc_discriminator_loss(discriminator_real, discriminator_fake)
+            discriminator_loss = self.calc_discriminator_loss(
+                discriminator_real, discriminator_fake)
 
             generator_infoGAN_loss = info_loss + generator_loss
             discriminator_infoGAN_loss = info_loss + discriminator_loss
@@ -204,18 +214,21 @@ class infoGAN_digits():
         return images
 
     def train(self, dataset, batch_size=200, epochs=400):
-        batch_dataset = tf.data.Dataset.from_tensor_slices(dataset).shuffle(30000).batch(batch_size)
+        batch_dataset = tf.data.Dataset.from_tensor_slices(
+            dataset).shuffle(30000).batch(batch_size)
         batch_len = len(batch_dataset)
-        train_cycle=0
+        train_cycle = 0
         for epoch in range(0, epochs):
             for batch_cnt, batch_images in enumerate(batch_dataset):
-                train_cycle+=1
-                info_loss, generator_loss, discriminator_loss = self.train_step(batch_images, batch_size)
+                train_cycle += 1
+                info_loss, generator_loss, discriminator_loss = self.train_step(
+                    batch_images, batch_size)
                 status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
-                epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
+                    epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
-                if train_cycle%100==0:
-                    dump_file_path="train_images"+os.sep+"infoGAN-step-%d.png" %(train_cycle)
+                if train_cycle % 100 == 0:
+                    dump_file_path = "train_images"+os.sep + \
+                        "infoGAN-step-%d.png" % (train_cycle)
                     self.debug_dump_model_image(dump_file_path)
                     self.save_model()
 
@@ -250,9 +263,9 @@ class infoGAN_digits():
         z, c = self.generator_input(batch, digit)
         ginput = tf.concat([z, c], axis=-1)
         result = self.generator(ginput, training=False)
-        result= np.array(result)
+        result = np.array(result)
         result = result*(255/2)+(255/2)
-        result=result.astype(int)
+        result = result.astype(int)
         return result
 
     def debug_peek_model_image(self):
@@ -276,41 +289,51 @@ class infoGAN_digits():
         plt.show()
         return
 
-
-    def debug_dump_model_image(self,fileName):
+    def debug_dump_model_image(self, fileName):
+        if not hasattr(debug_dump_model_image, "imagePlotProcess"):
+            debug_dump_model_image.imagePlotProcess = None
         digits = [int(i/10) for i in range(100)]
         image_list = []
         for dig in digits:
             image_generate = self.generate_image(1, dig)
             image_generate = image_generate[0][:, :, 0]
-            image_generate=255-np.array(image_generate)
+            image_generate = 255-np.array(image_generate)
 
             image_list.append(image_generate)
 
         image_w_cnt = 10
         image_h_cnt = 10
 
-        fig,ax=plt.subplots(image_w_cnt, image_h_cnt,figsize=(10, 10))
-        for c in range(0, image_w_cnt):
-            for r in range(0, image_h_cnt):
-                index = c * image_h_cnt + r
-                sub_plot=ax[c,r]
-                sub_plot.imshow(image_list[index], cmap='gray', vmin=0, vmax=255)
-                sub_plot.set_yticks([])
-                sub_plot.set_xticks([])
+        def _plot(image_w_cnt, image_h_cnt, image_list, fileName):
+            fig, ax = plt.subplots(image_w_cnt, image_h_cnt, figsize=(10, 10))
+            for c in range(0, image_w_cnt):
+                for r in range(0, image_h_cnt):
+                    index = c * image_h_cnt + r
+                    sub_plot = ax[c, r]
+                    sub_plot.imshow(image_list[index],
+                                    cmap='gray', vmin=0, vmax=255)
+                    sub_plot.set_yticks([])
+                    sub_plot.set_xticks([])
 
-        dir_name=os.path.dirname(fileName)
-        dir_name=os.path.realpath(dir_name)
-        if not os.path.exists(dir_name):
-            os.makedirs(dir_name,exist_ok=True)
-        fig.savefig(fileName,dpi=600)
-        plt.close(fig)
+            dir_name = os.path.dirname(fileName)
+            dir_name = os.path.realpath(dir_name)
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name, exist_ok=True)
+            fig.savefig(fileName, dpi=600)
+            return
+        if debug_dump_model_image.imagePlotProcess is not None:
+            debug_dump_model_image.imagePlotProcess.join()
+            debug_dump_model_image.imagePlotProcess = None
+        process = multiprocessing.Process(target=_plot, args=(
+            image_w_cnt, image_h_cnt, image_list, fileName,))
+        process.start()
+        debug_dump_model_image.imagePlotProcess = process
         return
 
 
-if __name__=="__main__":
-    gan=infoGAN_digits()
+if __name__ == "__main__":
+    gan = infoGAN_digits()
     gan.load_model()
     dataset = gan.process_dataset()
-    gan.train(dataset,batch_size=64,epochs=100)
+    gan.train(dataset, batch_size=64, epochs=100)
     sys.exit(0)
