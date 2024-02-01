@@ -217,7 +217,6 @@ def summarize_performance(step, g_model, gan_model, latent_dim, n_cat, n_samples
 
 
 def load_model(gan_model):
-    # abondoned, too complex
     import os
     import re
     import shutil
