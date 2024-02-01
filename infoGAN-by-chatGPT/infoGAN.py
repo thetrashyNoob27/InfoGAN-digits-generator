@@ -160,7 +160,7 @@ if __name__ == "__main__":
 
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories], verbose=0)
-            generated_images = generated_images*(255/2)+(255/2)
+            generated_images = generated_images*255
             generated_images = generated_images.astype(int)
             generated_images = 255-generated_images
 
