@@ -88,7 +88,8 @@ def mutual_information_loss(c, c_given_x):
 
 
 if __name__ == "__main__":
-    os.nice(19)
+    if platform.system() == "Linux":
+        os.nice(19)
     # Dimensions
     latent_dim = 62
     num_continuous = 1
