@@ -1,0 +1,6 @@
+checkpoint/
+train_images/
+venv/
+.idea/
+*.tf/
+*.png
