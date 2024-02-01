@@ -6,6 +6,7 @@ import multiprocessing
 import time
 import tensorflow as tf
 import os
+
 np.random.seed(16)
 tf.random.set_seed(16)
 
@@ -17,20 +18,25 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
-    x = tf.keras.layers.Dense(512 * 7 * 7, activation='relu')(x)
+
+    x = tf.keras.layers.Dense(512 * 7 * 7)(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+
     x = tf.keras.layers.Reshape((7, 7, 512))(x)
+
     x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-    x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
+
     x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-    x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
     # upsample to 14x14
     x = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
         2, 2), padding='same')(x)
-    x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
     # upsample to 28x28
     x = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
         2, 2), padding='same')(x)
@@ -44,17 +50,22 @@ def build_discriminator(num_continuous, num_categories):
     # downsample to 14x14
     x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
         2, 2), padding='same')(image_input)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
     x = tf.keras.layers.Conv2D(128, (4, 4), strides=(
         2, 2), padding='same')(image_input)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+
     x = tf.keras.layers.Flatten()(x)
+
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(128, activation='relu')(x)
+    x = tf.keras.layers.Dense(128)(x)
     x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Activation('relu')(x)
 
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear')(x)
@@ -125,8 +136,8 @@ if __name__ == "__main__":
 
     # Training loop
     plot_process = None
-    REPORT_PERIOD_SEC=30
-    next_report_time=time.monotonic()+REPORT_PERIOD_SEC
+    REPORT_PERIOD_SEC = 60
+    next_report_time = time.monotonic() + REPORT_PERIOD_SEC
     for epoch in range(epochs):
         # Train discriminator
         idx = np.random.randint(0, x_train.shape[0], half_batch)
@@ -165,9 +176,9 @@ if __name__ == "__main__":
                                                [valid, sampled_continuous, sampled_categories_one_hot])
 
         # Print progress
-        now_monotonic_time=time.monotonic()
-        if now_monotonic_time>next_report_time:
-            next_report_time+=REPORT_PERIOD_SEC
+        now_monotonic_time = time.monotonic()
+        if now_monotonic_time > next_report_time:
+            next_report_time += REPORT_PERIOD_SEC
             print(
                 f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
 
@@ -188,7 +199,6 @@ if __name__ == "__main__":
 
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories], verbose=0)
-
 
 
             # print(generated_images.shape)#(100, 28, 28, 1)
