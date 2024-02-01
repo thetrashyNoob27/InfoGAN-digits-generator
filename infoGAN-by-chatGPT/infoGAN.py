@@ -16,23 +16,46 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
-    x = tf.keras.layers.Dense(128, activation='relu')(x)
-    x = tf.keras.layers.Dense(256, activation='relu')(x)
-    x = tf.keras.layers.Dense(784, activation='sigmoid')(x)
-    generated_image = tf.keras.layers.Reshape((28, 28, 1))(x)
-
+    x = tf.keras.layers.Dense(128*7*7, activation='relu')(x)
+    x = tf.keras.layers.Reshape((7, 7, 128))(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    # upsample to 14x14
+    x = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
+        2, 2), padding='same')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    # upsample to 28x28
+    x = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
+        2, 2), padding='same')(x)
+    generated_image = tf.keras.layers.Activation('sigmoid')(x)
     return tf.keras.models.Model([noise, continuous_input, category_input], generated_image)
 
 
 def build_discriminator(num_continuous, num_categories):
     image_input = tf.keras.layers.Input(shape=(28, 28, 1))
-    flat_image = tf.keras.layers.Flatten()(image_input)
 
-    x = tf.keras.layers.Dense(256, activation='relu')(flat_image)
-
+    # downsample to 14x14
+    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
+        2, 2), padding='same')(image_input)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
+        2, 2), padding='same')(image_input)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Flatten()(x)
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     # Auxiliary outputs
+    x = tf.keras.layers.Dense(128*7*7, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dense(128*7, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear')(x)
     category_output = tf.keras.layers.Dense(
