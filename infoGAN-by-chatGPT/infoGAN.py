@@ -19,22 +19,24 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
-
-    x = tf.keras.layers.Dense(512 * 7 * 7)(x)
+    x = tf.keras.layers.Dense(512 * 7 * 7, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
-
     x = tf.keras.layers.Reshape((7, 7, 512))(x)
 
     x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation('relu')(x)
 
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
+
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     # upsample to 14x14
     x = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
         2, 2), padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+
     x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     # upsample to 28x28
     x = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
         2, 2), padding='same')(x)
@@ -48,16 +50,11 @@ def build_discriminator(num_continuous, num_categories):
     # downsample to 14x14
     x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
         2, 2), padding='same')(image_input)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
 
     x = tf.keras.layers.Conv2D(128, (4, 4), strides=(
         2, 2), padding='same')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-
-    x = tf.keras.layers.Dense(64)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
     x = tf.keras.layers.Flatten()(x)
@@ -65,9 +62,8 @@ def build_discriminator(num_continuous, num_categories):
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(32)(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear')(x)
@@ -92,35 +88,36 @@ if __name__ == "__main__":
         os.nice(19)
     # Dimensions
     latent_dim = 62
-    num_continuous = 1
+    num_continuous = 2
     num_categories = 10
 
     # Build and compile the generator, discriminator, and InfoGAN models
-    generator = build_generator(latent_dim, num_continuous, num_categories)
-    discriminator = build_discriminator(num_continuous, num_categories)
-
-    discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5), loss=[
-        'binary_crossentropy', 'mse', 'categorical_crossentropy'])
-
-    # InfoGAN model
     try:
-        info_gan_model = tf.keras.models.load_model("infoGAN-mode.tf")
+        generator = tf.keras.models.load_model("infoGAN-model-G.tf")
+        discriminator = tf.keras.models.load_model("infoGAN-model-D.tf")
         print("load model success")
     except OSError as e:
-        noise = tf.keras.layers.Input(shape=(latent_dim,))
-        continuous_input = tf.keras.layers.Input(shape=(num_continuous,))
-        category_input = tf.keras.layers.Input(shape=(num_categories,))
-        generated_image = generator([noise, continuous_input, category_input])
-        discriminator.trainable = False
-        validity, continuous_output, category_output = discriminator(
-            generated_image)
-        info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
-            validity, continuous_output, category_output])
+        generator = build_generator(latent_dim, num_continuous, num_categories)
+        discriminator = build_discriminator(num_continuous, num_categories)
 
-        info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5),
-                               loss=['binary_crossentropy', 'mse',
-                                     'categorical_crossentropy'],
-                               loss_weights=[1, 0.5, 1])
+        discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5), loss=[
+            'binary_crossentropy', 'mse', 'categorical_crossentropy'])
+
+    # InfoGAN model
+    noise = tf.keras.layers.Input(shape=(latent_dim,))
+    continuous_input = tf.keras.layers.Input(shape=(num_continuous,))
+    category_input = tf.keras.layers.Input(shape=(num_categories,))
+    generated_image = generator([noise, continuous_input, category_input])
+    discriminator.trainable = False
+    validity, continuous_output, category_output = discriminator(
+        generated_image)
+    info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
+        validity, continuous_output, category_output])
+
+    info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5),
+                           loss=['binary_crossentropy', 'mse',
+                                 'categorical_crossentropy'],
+                           loss_weights=[1, 0.5, 1])
     # prepare dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x = np.concatenate((x_train, x_test), axis=0)
@@ -178,7 +175,7 @@ if __name__ == "__main__":
                                                [valid, sampled_continuous, sampled_categories_one_hot])
 
         # Print progress
-        plot_process=None
+        plot_process = None
         now_monotonic_time = time.monotonic()
         if now_monotonic_time > next_report_time:
             next_report_time += REPORT_PERIOD_SEC
@@ -186,7 +183,8 @@ if __name__ == "__main__":
                 f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
 
             # save model
-            info_gan_model.save("infoGAN-mode.tf", save_format="tf")
+            generator.save("infoGAN-model-G.tf", save_format="tf")
+            discriminator.save("infoGAN-model-D.tf", save_format="tf")
 
             # plot image process
             noise = np.random.normal(0, 1, (100, latent_dim))
@@ -202,7 +200,6 @@ if __name__ == "__main__":
 
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories], verbose=0)
-            generated_images = -generated_images
 
 
             # print(generated_images.shape)#(100, 28, 28, 1)
@@ -220,13 +217,15 @@ if __name__ == "__main__":
                 fileName = "infoGAN-%d.png" % (epoch)
                 fig.savefig(fileName, dpi=600)
                 return
+
+
             if plot_process is not None:
                 plot_process.join()
-            if platform.system()=="Linux":
+            if platform.system() == "Linux":
                 plot_process = multiprocessing.Process(target=_plot, args=(
                     generated_images, epoch,))
                 plot_process.start()
-            elif platform.system()=="Windows":
+            elif platform.system() == "Windows":
                 _plot(generated_images, epoch)
             else:
                 print("!!! should not be here !!!")
