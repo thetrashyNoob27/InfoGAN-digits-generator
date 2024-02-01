@@ -6,6 +6,7 @@ import multiprocessing
 import time
 import tensorflow as tf
 import os
+import platform
 
 np.random.seed(16)
 tf.random.set_seed(16)
@@ -55,13 +56,16 @@ def build_discriminator(num_continuous, num_categories):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
+    x = tf.keras.layers.Dense(64)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
     x = tf.keras.layers.Flatten()(x)
 
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(128)(x)
+    x = tf.keras.layers.Dense(32)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
 
@@ -133,7 +137,7 @@ if __name__ == "__main__":
     half_batch = batch_size // 2
 
     # Training loop
-    REPORT_PERIOD_SEC = 60
+    REPORT_PERIOD_SEC = 30
     next_report_time = time.monotonic() + REPORT_PERIOD_SEC
     for epoch in range(epochs):
         # Train discriminator
@@ -173,6 +177,7 @@ if __name__ == "__main__":
                                                [valid, sampled_continuous, sampled_categories_one_hot])
 
         # Print progress
+        plot_process=None
         now_monotonic_time = time.monotonic()
         if now_monotonic_time > next_report_time:
             next_report_time += REPORT_PERIOD_SEC
@@ -214,9 +219,16 @@ if __name__ == "__main__":
                 fileName = "infoGAN-%d.png" % (epoch)
                 fig.savefig(fileName, dpi=600)
                 return
-            plot_process = multiprocessing.Process(target=_plot, args=(
-                generated_images, epoch,))
-            plot_process.start()
+            if plot_process is not None:
+                plot_process.join()
+            if platform.system()=="Linux":
+                plot_process = multiprocessing.Process(target=_plot, args=(
+                    generated_images, epoch,))
+                plot_process.start()
+            elif platform.system()=="Windows":
+                _plot(generated_images, epoch)
+            else:
+                print("!!! should not be here !!!")
 
     # After training, you can use the generator to generate new samples:
     generated_samples = generator.predict([np.random.normal(0, 1, (10, latent_dim)),
