@@ -3,8 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
-
+import time
 import tensorflow as tf
+import os
 np.random.seed(16)
 tf.random.set_seed(16)
 
@@ -16,8 +17,12 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
-    x = tf.keras.layers.Dense(128*7*7, activation='relu')(x)
-    x = tf.keras.layers.Reshape((7, 7, 128))(x)
+    x = tf.keras.layers.Dense(512 * 7 * 7, activation='relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.Reshape((7, 7, 512))(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
+    x = tf.keras.layers.Activation('relu')(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
     x = tf.keras.layers.Activation('relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
@@ -29,7 +34,7 @@ def build_generator(latent_dim, num_continuous, num_categories):
     # upsample to 28x28
     x = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
         2, 2), padding='same')(x)
-    generated_image = tf.keras.layers.Activation('sigmoid')(x)
+    generated_image = tf.keras.layers.Activation('tanh')(x)
     return tf.keras.models.Model([noise, continuous_input, category_input], generated_image)
 
 
@@ -41,18 +46,13 @@ def build_discriminator(num_continuous, num_categories):
         2, 2), padding='same')(image_input)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
+    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(
         2, 2), padding='same')(image_input)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Flatten()(x)
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(128*7*7, activation='relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Dense(128*7, activation='relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.Dense(128, activation='relu')(x)
     x = tf.keras.layers.BatchNormalization()(x)
 
@@ -75,6 +75,7 @@ def mutual_information_loss(c, c_given_x):
 
 
 if __name__ == "__main__":
+    os.nice(19)
     # Dimensions
     latent_dim = 62
     num_continuous = 2
@@ -84,8 +85,8 @@ if __name__ == "__main__":
     generator = build_generator(latent_dim, num_continuous, num_categories)
     discriminator = build_discriminator(num_continuous, num_categories)
 
-    discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002), loss=[
-                          'binary_crossentropy', 'mse', 'categorical_crossentropy'])
+    discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5), loss=[
+        'binary_crossentropy', 'mse', 'categorical_crossentropy'])
 
     # InfoGAN model
     try:
@@ -102,7 +103,7 @@ if __name__ == "__main__":
         info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
             validity, continuous_output, category_output])
 
-        info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002),
+        info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5),
                                loss=['binary_crossentropy', 'mse',
                                      'categorical_crossentropy'],
                                loss_weights=[1, 0.5, 1])
@@ -111,7 +112,7 @@ if __name__ == "__main__":
     x = np.concatenate((x_train, x_test), axis=0)
     y = np.concatenate((y_train, y_test), axis=0)
     del x_train, y_train, x_test, y_test
-    x_train = x / 255.0
+    x_train = (x - 127.5) / 127.5
     x_train = x_train.reshape(x_train.shape + (1,)).astype("float32")
 
     # Build and compile the generator, discriminator, and InfoGAN models
@@ -124,6 +125,8 @@ if __name__ == "__main__":
 
     # Training loop
     plot_process = None
+    REPORT_PERIOD_SEC=30
+    next_report_time=time.monotonic()+REPORT_PERIOD_SEC
     for epoch in range(epochs):
         # Train discriminator
         idx = np.random.randint(0, x_train.shape[0], half_batch)
@@ -162,7 +165,9 @@ if __name__ == "__main__":
                                                [valid, sampled_continuous, sampled_categories_one_hot])
 
         # Print progress
-        if epoch % 100 == 0 and epoch != 0:
+        now_monotonic_time=time.monotonic()
+        if now_monotonic_time>next_report_time:
+            next_report_time+=REPORT_PERIOD_SEC
             print(
                 f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
 
@@ -173,19 +178,18 @@ if __name__ == "__main__":
             noise = np.random.normal(0, 1, (100, latent_dim))
             cat_array = np.zeros((100, num_categories))
             for i in range(0, 100):
-                idx = i//num_categories
+                idx = i // num_categories
                 cat_array[i, idx] = 1
             sampled_categories = cat_array
             del cat_array
 
-            sampled_continuous = np.concatenate(
-                (np.linspace(-1, 1, 100).reshape((-1, 1)), np.linspace(-1, 1, 100).reshape((-1, 1))), axis=1)
+            sampled_continuous = np.random.uniform(-1,
+                                                   1, (100, num_continuous))
 
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories], verbose=0)
-            generated_images = generated_images*255
-            generated_images = generated_images.astype(int)
-            generated_images = 255-generated_images
+
+
 
             # print(generated_images.shape)#(100, 28, 28, 1)
 
@@ -196,12 +200,14 @@ if __name__ == "__main__":
                         index = c * 10 + r
                         sub_plot = ax[c, r]
                         sub_plot.imshow(generated[index],
-                                        cmap='gray', vmin=0, vmax=255)
+                                        cmap='gray', vmin=-1, vmax=1)
                         sub_plot.set_yticks([])
                         sub_plot.set_xticks([])
                 fileName = "infoGAN-%d.png" % (epoch)
                 fig.savefig(fileName, dpi=600)
                 return
+
+
             if plot_process is not None:
                 plot_process.join()
                 del plot_process
