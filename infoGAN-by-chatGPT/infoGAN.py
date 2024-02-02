@@ -76,16 +76,6 @@ def build_discriminator(num_continuous, num_categories):
     return tf.keras.Model(inputs=image_input, outputs=[validity, continuous_output, category_output])
 
 
-def mutual_information_loss(c, c_given_x):
-    """Mutual information loss."""
-    eps = 1e-8
-    conditional_entropy = - \
-        tf.reduce_mean(tf.reduce_sum(
-            c_given_x * tf.math.log(c_given_x + eps), axis=1))
-    entropy = -tf.reduce_mean(tf.reduce_sum(c * tf.math.log(c + eps), axis=1))
-    return conditional_entropy + entropy
-
-
 if __name__ == "__main__":
     if platform.system() == "Linux":
         os.nice(19)
@@ -111,7 +101,10 @@ if __name__ == "__main__":
     continuous_input = tf.keras.layers.Input(shape=(num_continuous,))
     category_input = tf.keras.layers.Input(shape=(num_categories,))
     generated_image = generator([noise, continuous_input, category_input])
-    discriminator.trainable = False
+    for layer in discriminator.layers:
+        if isinstance(layer, tf.keras.layers.BatchNormalization):
+            continue
+        layer.trainable = False
     validity, continuous_output, category_output = discriminator(
         generated_image)
     info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
