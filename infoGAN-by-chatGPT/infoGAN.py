@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # example of training an infogan on mnist
-import re
-
-import numpy as np
-import matplotlib.pyplot as plt
 import multiprocessing
-import time
-import tensorflow as tf
 import os
 import platform
+import re
+import time
+
+import matplotlib.pyplot as plt
+import numpy as np
+import tensorflow as tf
 
 np.random.seed(16)
 tf.random.set_seed(16)
@@ -21,21 +21,30 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
+    gen = x
+
+    gen = tf.keras.layers.Dense(1000)(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Dropout(0.05)(gen)
 
     n_nodes = 512 * 7 * 7
-    gen = tf.keras.layers.Dense(n_nodes)(x)
+    gen = tf.keras.layers.Dense(n_nodes)(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
+    gen = tf.keras.layers.Dropout(0.05)(gen)
     # normal
     gen = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 14x14
     gen = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
         2, 2), padding='same')(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 28x28
     gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
         2, 2), padding='same')(gen)
@@ -51,16 +60,22 @@ def build_discriminator(num_continuous, num_categories):
     # downsample to 14x14
     d = tf.keras.layers.Conv2D(64, (4, 4), strides=(
         2, 2), padding='same')(image_input)
+    d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
-    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
+    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2),
                                padding='same')(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
     # normal
-    d = tf.keras.layers.Conv2D(256, (4, 4), padding='same')(d)
+    d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
+
+    d = tf.keras.layers.Conv2D(32, (4, 4), padding='same')(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+    d = tf.keras.layers.BatchNormalization()(d)
+
     # flatten feature maps
     d = tf.keras.layers.Flatten()(d)
 
@@ -192,6 +207,13 @@ if __name__ == "__main__":
             generated_images = generator.predict(
                 [noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
 
+            real_predict, _, _ = discriminator.predict(real_images, verbose=0)
+            fake_predict, _, _ = discriminator.predict(generated_images, verbose=0)
+            generator_score = np.mean(fake_predict)
+            discriminator_score = np.mean([np.mean(real_predict), generator_score])
+            g_score_log.append(generator_score)
+            d_score_log.append(discriminator_score)
+
             valid = np.ones((half_batch, 1))
             fake = np.zeros((half_batch, 1))
 
@@ -225,7 +247,7 @@ if __name__ == "__main__":
             if now_monotonic_time > next_report_time:
                 next_report_time += REPORT_PERIOD_SEC
                 print(
-                    f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
+                    f"{trainCnt} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
 
                 # save model
                 generator.save("infoGAN-model-G.tf", save_format="tf")
@@ -250,16 +272,28 @@ if __name__ == "__main__":
                 # print(generated_images.shape)#(100, 28, 28, 1)
 
                 def _plot(generated, epoch, d_loss_log, g_loss_log):
-                    fig, ax = plt.subplots(dpi=300, figsize=(16, 9))
+                    fig, ax = plt.subplots(2, 1, dpi=300, figsize=(16, 9))
                     _x = [i for i in range(0, epoch)]
-                    ax.plot(_x, d_loss_log[:epoch], label="discriminator loss")
-                    ax.plot(_x, g_loss_log[:epoch], label="generator loss")
-                    ax.set_xlim(0, epochs)
-                    ax.set_xlabel("epoch/tick")
-                    ax.set_ylabel('loss')
-                    ax.set_title('D-G loss')
-                    ax.legend()
-                    ax.grid(True)
+                    _plot_idx = 0
+                    ax[_plot_idx].plot(_x, d_loss_log, label="discriminator loss")
+                    ax[_plot_idx].plot(_x, g_loss_log, label="generator loss")
+                    ax[_plot_idx].set_xlabel("epoch/tick")
+                    ax[_plot_idx].set_ylabel('loss')
+                    ax[_plot_idx].set_title('D-G loss')
+                    ax[_plot_idx].legend()
+                    ax[_plot_idx].grid(True)
+
+                    _plot_idx = 1
+                    ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
+                    ax[_plot_idx].plot(_x, g_score_log, label="generator score")
+                    ax[_plot_idx].set_ylim(0, 1)
+                    ax[_plot_idx].set_xlabel("epoch/tick")
+                    ax[_plot_idx].set_ylabel('score')
+                    ax[_plot_idx].set_title('D-G score')
+                    ax[_plot_idx].legend()
+                    ax[_plot_idx].grid(True)
+
+                    discriminator_score
                     fig.savefig("infoGAN_loss_plot_%d.png" % (epoch))
                     plt.close(fig)
 
