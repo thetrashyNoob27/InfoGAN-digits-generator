@@ -49,7 +49,8 @@ def build_discriminator(num_continuous, num_categories):
     image_input = tf.keras.layers.Input(shape=(28, 28, 1))
 
     # downsample to 14x14
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(image_input)
+    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(
+        2, 2), padding='same')(image_input)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
     d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
@@ -84,7 +85,6 @@ def remove_old_image():
     loss_image_pattern = re.compile(r"infoGAN_loss_plot_(\d+)\.png")
     rmlist = []
     for root, dirs, files in os.walk("."):
-        print(files)
         for f in files:
             rm_mark = False
             if test_image_pattern.match(f):
@@ -167,115 +167,126 @@ if __name__ == "__main__":
     next_report_time = time.monotonic() + REPORT_PERIOD_SEC
     d_loss_log = []
     g_loss_log = []
+    d_score_log = []
+    g_score_log = []
+    trainCnt = 0
     for epoch in range(epochs):
-        # Train discriminator
-        idx = np.random.randint(0, x_train.shape[0], half_batch)
-        real_images = x_train[idx]
+        indices = np.arange(0, x_train.shape[0])
+        np.random.shuffle(indices)
+        x_train = x_train[indices]
+        y = y[indices]
+        batchs = np.array_split(x_train, np.ceil(x_train.shape[0] / half_batch))
+        for b in batchs:
+            trainCnt += 1
+            # Train discriminator
+            real_images = b
 
-        noise = np.random.normal(0, 1, (half_batch, latent_dim))
-        sampled_categories = np.random.randint(0, num_categories, half_batch)
-        sampled_categories_one_hot = tf.keras.utils.to_categorical(
-            sampled_categories, num_categories)
-        sampled_continuous = np.random.uniform(-1,
-                                               1, (half_batch, num_continuous))
-
-        generated_images = generator.predict(
-            [noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
-
-        valid = np.ones((half_batch, 1))
-        fake = np.zeros((half_batch, 1))
-
-        d_loss_real = discriminator.train_on_batch(
-            real_images, [valid, sampled_continuous, sampled_categories_one_hot])
-        d_loss_fake = discriminator.train_on_batch(
-            generated_images, [fake, sampled_continuous, sampled_categories_one_hot])
-        d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
-
-        # Train generator
-        noise = np.random.normal(0, 1, (batch_size, latent_dim))
-        sampled_categories = np.random.randint(0, num_categories, batch_size)
-        sampled_categories_one_hot = tf.keras.utils.to_categorical(
-            sampled_categories, num_categories)
-        sampled_continuous = np.random.uniform(-1,
-                                               1, (batch_size, num_continuous))
-
-        valid = np.ones((batch_size, 1))
-
-        g_loss = info_gan_model.train_on_batch([noise, sampled_continuous, sampled_categories_one_hot],
-                                               [valid, sampled_continuous, sampled_categories_one_hot])
-
-        # log the loss
-        d_loss_log.append(d_loss[0])
-        g_loss_log.append(g_loss[0])
-
-        # Print progress
-        plot_process = None
-        now_monotonic_time = time.monotonic()
-        if now_monotonic_time > next_report_time:
-            next_report_time += REPORT_PERIOD_SEC
-            print(
-                f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
-
-            # save model
-            generator.save("infoGAN-model-G.tf", save_format="tf")
-            discriminator.save("infoGAN-model-D.tf", save_format="tf")
-
-            # plot image process
-            noise = np.random.normal(0, 1, (100, latent_dim))
-            cat_array = np.zeros((100, num_categories))
-            for i in range(0, 100):
-                idx = i // num_categories
-                cat_array[i, idx] = 1
-            sampled_categories = cat_array
-            del cat_array
-
+            noise = np.random.normal(0, 1, (half_batch, latent_dim))
+            sampled_categories = np.random.randint(
+                0, num_categories, half_batch)
+            sampled_categories_one_hot = tf.keras.utils.to_categorical(
+                sampled_categories, num_categories)
             sampled_continuous = np.random.uniform(-1,
-                                                   1, (100, num_continuous))
+                                                   1, (half_batch, num_continuous))
 
             generated_images = generator.predict(
-                [noise, sampled_continuous, sampled_categories], verbose=0)
+                [noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
+
+            valid = np.ones((half_batch, 1))
+            fake = np.zeros((half_batch, 1))
+
+            d_loss_real = discriminator.train_on_batch(
+                real_images, [valid, sampled_continuous, sampled_categories_one_hot])
+            d_loss_fake = discriminator.train_on_batch(
+                generated_images, [fake, sampled_continuous, sampled_categories_one_hot])
+            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+
+            # Train generator
+            noise = np.random.normal(0, 1, (batch_size, latent_dim))
+            sampled_categories = np.random.randint(
+                0, num_categories, batch_size)
+            sampled_categories_one_hot = tf.keras.utils.to_categorical(
+                sampled_categories, num_categories)
+            sampled_continuous = np.random.uniform(-1,
+                                                   1, (batch_size, num_continuous))
+
+            valid = np.ones((batch_size, 1))
+
+            g_loss = info_gan_model.train_on_batch([noise, sampled_continuous, sampled_categories_one_hot],
+                                                   [valid, sampled_continuous, sampled_categories_one_hot])
+
+            # log the loss
+            d_loss_log.append(d_loss[0])
+            g_loss_log.append(g_loss[0])
+
+            # Print progress
+            plot_process = None
+            now_monotonic_time = time.monotonic()
+            if now_monotonic_time > next_report_time:
+                next_report_time += REPORT_PERIOD_SEC
+                print(
+                    f"{epoch} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
+
+                # save model
+                generator.save("infoGAN-model-G.tf", save_format="tf")
+                discriminator.save("infoGAN-model-D.tf", save_format="tf")
+
+                # plot image process
+                noise = np.random.normal(0, 1, (100, latent_dim))
+                cat_array = np.zeros((100, num_categories))
+                for i in range(0, 100):
+                    idx = i // num_categories
+                    cat_array[i, idx] = 1
+                sampled_categories = cat_array
+                del cat_array
+
+                sampled_continuous = np.random.uniform(-1,
+                                                       1, (100, num_continuous))
+
+                generated_images = generator.predict(
+                    [noise, sampled_continuous, sampled_categories], verbose=0)
 
 
-            # print(generated_images.shape)#(100, 28, 28, 1)
+                # print(generated_images.shape)#(100, 28, 28, 1)
 
-            def _plot(generated, epoch, d_loss_log, g_loss_log):
-                fig, ax = plt.subplots(dpi=300, figsize=(16, 9))
-                _x = [i for i in range(0, epoch)]
-                ax.plot(_x, d_loss_log[:epoch], label="discriminator loss")
-                ax.plot(_x, g_loss_log[:epoch], label="generator loss")
-                ax.set_xlim(0, epochs)
-                ax.set_xlabel("epoch/tick")
-                ax.set_ylabel('loss')
-                ax.set_title('D-G loss')
-                ax.legend()
-                ax.grid(True)
-                fig.savefig("infoGAN_loss_plot_%d.png" % (epoch))
-                plt.close(fig)
+                def _plot(generated, epoch, d_loss_log, g_loss_log):
+                    fig, ax = plt.subplots(dpi=300, figsize=(16, 9))
+                    _x = [i for i in range(0, epoch)]
+                    ax.plot(_x, d_loss_log[:epoch], label="discriminator loss")
+                    ax.plot(_x, g_loss_log[:epoch], label="generator loss")
+                    ax.set_xlim(0, epochs)
+                    ax.set_xlabel("epoch/tick")
+                    ax.set_ylabel('loss')
+                    ax.set_title('D-G loss')
+                    ax.legend()
+                    ax.grid(True)
+                    fig.savefig("infoGAN_loss_plot_%d.png" % (epoch))
+                    plt.close(fig)
 
-                fig, ax = plt.subplots(10, 10, figsize=(10, 10))
-                for c in range(0, 10):
-                    for r in range(0, 10):
-                        index = c * 10 + r
-                        sub_plot = ax[c, r]
-                        sub_plot.imshow(generated[index],
-                                        cmap='gray', vmin=-1, vmax=1)
-                        sub_plot.set_yticks([])
-                        sub_plot.set_xticks([])
-                fileName = "infoGAN-%d.png" % (epoch)
-                fig.savefig(fileName, dpi=600)
-                return
+                    fig, ax = plt.subplots(10, 10, figsize=(10, 10))
+                    for c in range(0, 10):
+                        for r in range(0, 10):
+                            index = c * 10 + r
+                            sub_plot = ax[c, r]
+                            sub_plot.imshow(generated[index],
+                                            cmap='gray', vmin=-1, vmax=1)
+                            sub_plot.set_yticks([])
+                            sub_plot.set_xticks([])
+                    fileName = "infoGAN-%d.png" % (epoch)
+                    fig.savefig(fileName, dpi=600)
+                    return
 
 
-            if plot_process is not None:
-                plot_process.join()
-            if platform.system() == "Linux":
-                plot_process = multiprocessing.Process(target=_plot, args=(
-                    generated_images, epoch, d_loss_log, g_loss_log,))
-                plot_process.start()
-            elif platform.system() == "Windows":
-                _plot(generated_images, epoch, d_loss_log, g_loss_log)
-            else:
-                print("!!! should not be here !!!")
+                if plot_process is not None:
+                    plot_process.join()
+                if platform.system() == "Linux":
+                    plot_process = multiprocessing.Process(target=_plot, args=(
+                        generated_images, trainCnt, d_loss_log, g_loss_log,))
+                    plot_process.start()
+                elif platform.system() == "Windows":
+                    _plot(generated_images, trainCnt, d_loss_log, g_loss_log)
+                else:
+                    print("!!! should not be here !!!")
 
     # After training, you can use the generator to generate new samples:
     generated_samples = generator.predict([np.random.normal(0, 1, (10, latent_dim)),
