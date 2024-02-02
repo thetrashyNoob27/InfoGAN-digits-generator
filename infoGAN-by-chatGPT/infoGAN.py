@@ -24,30 +24,26 @@ def build_generator(latent_dim, num_continuous, num_categories):
     gen = x
 
     gen = tf.keras.layers.Dense(1000)(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
-
+    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
 
     n_nodes = 512 * 7 * 7
     gen = tf.keras.layers.Dense(n_nodes)(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
-
+    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # normal
     gen = tf.keras.layers.Conv2D(512, (4, 4), padding='same')(gen)
-
-    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 14x14
     gen = tf.keras.layers.Conv2DTranspose(256, (4, 4), strides=(
         2, 2), padding='same')(gen)
-
-    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 28x28
     gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
@@ -67,15 +63,11 @@ def build_discriminator(num_continuous, num_categories):
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2),
+    d = tf.keras.layers.Conv2D(32, (4, 4), strides=(2, 2),
                                padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
-    d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
-    d = tf.keras.layers.BatchNormalization()(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
-
     d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
@@ -90,10 +82,7 @@ def build_discriminator(num_continuous, num_categories):
     validity = tf.keras.layers.Dense(1, activation='sigmoid')(d)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(128, activation='relu')(d)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-
+    x = d
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear')(x)
     category_output = tf.keras.layers.Dense(
@@ -129,6 +118,11 @@ def remove_old_image():
     return
 
 
+def wassertein_loss(ytrue, yhat):
+    loss = tf.reduce_mean(ytrue * yhat)
+    return loss
+
+
 if __name__ == "__main__":
     remove_old_image()
     if platform.system() == "Linux":
@@ -147,8 +141,8 @@ if __name__ == "__main__":
         generator = build_generator(latent_dim, num_continuous, num_categories)
         discriminator = build_discriminator(num_continuous, num_categories)
 
-        discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5), loss=[
-            'binary_crossentropy', 'mse', 'categorical_crossentropy'])
+        discriminator.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005), loss=[
+            wassertein_loss, 'mse', 'categorical_crossentropy'])
 
     # InfoGAN model
     noise = tf.keras.layers.Input(shape=(latent_dim,))
@@ -164,8 +158,8 @@ if __name__ == "__main__":
     info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
         validity, continuous_output, category_output])
 
-    info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5),
-                           loss=['binary_crossentropy', 'mse',
+    info_gan_model.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005),
+                           loss=[wassertein_loss, 'mse',
                                  'categorical_crossentropy'],
                            loss_weights=[1, 0.5, 1])
     # prepare dataset
