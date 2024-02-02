@@ -47,21 +47,25 @@ def build_discriminator(num_continuous, num_categories):
     image_input = tf.keras.layers.Input(shape=(28, 28, 1))
 
     # downsample to 14x14
-    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(
-        2, 2), padding='same')(image_input)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(image_input)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+    # downsample to 7x7
+    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
+                               padding='same',)(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+    d = tf.keras.layers.BatchNormalization()(d)
+    # normal
+    d = tf.keras.layers.Conv2D(256, (4, 4), padding='same')(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+    d = tf.keras.layers.BatchNormalization()(d)
+    # flatten feature maps
+    d = tf.keras.layers.Flatten()(d)
 
-    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(
-        2, 2), padding='same')(x)
-    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-
-    x = tf.keras.layers.Flatten()(x)
-
-    validity = tf.keras.layers.Dense(1, activation='sigmoid')(x)
+    validity = tf.keras.layers.Dense(1, activation='sigmoid')(d)
 
     # Auxiliary outputs
-    x = tf.keras.layers.Dense(128, activation='relu')(x)
+    x = tf.keras.layers.Dense(128, activation='relu')(d)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     x = tf.keras.layers.BatchNormalization()(x)
 
     continuous_output = tf.keras.layers.Dense(
@@ -121,6 +125,7 @@ if __name__ == "__main__":
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x = np.concatenate((x_train, x_test), axis=0)
     y = np.concatenate((y_train, y_test), axis=0)
+    x=np.expand_dims(x, axis=-1)
     del x_train, y_train, x_test, y_test
     x_train = (x - 127.5) / 127.5
     x_train = x_train.reshape(x_train.shape + (1,)).astype("float32")
