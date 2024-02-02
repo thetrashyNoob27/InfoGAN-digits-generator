@@ -58,12 +58,12 @@ def build_discriminator(num_continuous, num_categories):
     image_input = tf.keras.layers.Input(shape=(28, 28, 1))
 
     # downsample to 14x14
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(
+    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(
         2, 2), padding='same')(image_input)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2),
+    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
                                padding='same')(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
