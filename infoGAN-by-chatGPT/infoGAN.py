@@ -53,7 +53,7 @@ def build_discriminator(num_continuous, num_categories):
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
     d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
-                               padding='same',)(d)
+                               padding='same')(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
     # normal
@@ -80,17 +80,20 @@ def build_discriminator(num_continuous, num_categories):
 
 def remove_old_image():
     "infoGAN - %d.png"
-    test_image_demo=re.compile(r"infoGAN-(\d+)\.png")
-    rmlist=[]
-    for root,dirs,files in os.walk("."):
+    test_image_pattern = re.compile(r"infoGAN-(\d+)\.png")
+    loss_image_pattern = re.compile(r"infoGAN_loss_plot_(\d+)\.png")
+    rmlist = []
+    for root, dirs, files in os.walk("."):
         print(files)
         for f in files:
-            rm_mark=False
-            if test_image_demo.match(f):
-                rm_mark=True
+            rm_mark = False
+            if test_image_pattern.match(f):
+                rm_mark = True
+            elif loss_image_pattern.match(f):
+                rm_mark = True
 
             if rm_mark:
-                fpath=os.path.join(root, f)
+                fpath = os.path.join(root, f)
                 rmlist.append(fpath)
 
     # Remove each matching file
@@ -146,7 +149,7 @@ if __name__ == "__main__":
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x = np.concatenate((x_train, x_test), axis=0)
     y = np.concatenate((y_train, y_test), axis=0)
-    x=np.expand_dims(x, axis=-1)
+    x = np.expand_dims(x, axis=-1)
     del x_train, y_train, x_test, y_test
     x_train = (x - 127.5) / 127.5
     x_train = x_train.reshape(x_train.shape + (1,)).astype("float32")
@@ -162,6 +165,8 @@ if __name__ == "__main__":
     # Training loop
     REPORT_PERIOD_SEC = 30
     next_report_time = time.monotonic() + REPORT_PERIOD_SEC
+    d_loss_log = []
+    g_loss_log = []
     for epoch in range(epochs):
         # Train discriminator
         idx = np.random.randint(0, x_train.shape[0], half_batch)
@@ -199,6 +204,10 @@ if __name__ == "__main__":
         g_loss = info_gan_model.train_on_batch([noise, sampled_continuous, sampled_categories_one_hot],
                                                [valid, sampled_continuous, sampled_categories_one_hot])
 
+        # log the loss
+        d_loss_log.append(d_loss[0])
+        g_loss_log.append(g_loss[0])
+
         # Print progress
         plot_process = None
         now_monotonic_time = time.monotonic()
@@ -229,7 +238,20 @@ if __name__ == "__main__":
 
             # print(generated_images.shape)#(100, 28, 28, 1)
 
-            def _plot(generated, epoch):
+            def _plot(generated, epoch, d_loss_log, g_loss_log):
+                fig, ax = plt.subplots(dpi=300, figsize=(16, 9))
+                _x = [i for i in range(0, epoch)]
+                ax.plot(_x, d_loss_log[:epoch], label="discriminator loss")
+                ax.plot(_x, g_loss_log[:epoch], label="generator loss")
+                ax.set_xlim(0, epochs)
+                ax.set_xlabel("epoch/tick")
+                ax.set_ylabel('loss')
+                ax.set_title('D-G loss')
+                ax.legend()
+                ax.grid(True)
+                fig.savefig("infoGAN_loss_plot_%d.png" % (epoch))
+                plt.close(fig)
+
                 fig, ax = plt.subplots(10, 10, figsize=(10, 10))
                 for c in range(0, 10):
                     for r in range(0, 10):
@@ -248,10 +270,10 @@ if __name__ == "__main__":
                 plot_process.join()
             if platform.system() == "Linux":
                 plot_process = multiprocessing.Process(target=_plot, args=(
-                    generated_images, epoch,))
+                    generated_images, epoch, d_loss_log, g_loss_log,))
                 plot_process.start()
             elif platform.system() == "Windows":
-                _plot(generated_images, epoch)
+                _plot(generated_images, epoch, d_loss_log, g_loss_log)
             else:
                 print("!!! should not be here !!!")
 
