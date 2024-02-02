@@ -65,16 +65,16 @@ def build_discriminator(num_continuous, num_categories):
     # downsample to 7x7
     d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2),
                                padding='same')(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
     d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
     d = tf.keras.layers.Conv2D(32, (4, 4), padding='same')(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     d = tf.keras.layers.BatchNormalization()(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
     # flatten feature maps
     d = tf.keras.layers.Flatten()(d)
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     if platform.system() == "Linux":
         os.nice(19)
     # Dimensions
-    latent_dim = 62
+    latent_dim = 200
     num_continuous = 2
     num_categories = 10
 
@@ -210,7 +210,7 @@ if __name__ == "__main__":
             real_predict, _, _ = discriminator.predict(real_images, verbose=0)
             fake_predict, _, _ = discriminator.predict(generated_images, verbose=0)
             generator_score = np.mean(fake_predict)
-            discriminator_score = np.mean([np.mean(real_predict), generator_score])
+            discriminator_score = np.mean([np.mean(real_predict), 1 - generator_score])
             g_score_log.append(generator_score)
             d_score_log.append(discriminator_score)
 
