@@ -19,29 +19,28 @@ def build_generator(latent_dim, num_continuous, num_categories):
 
     x = tf.keras.layers.Concatenate()(
         [noise, continuous_input, category_input])
-    x = tf.keras.layers.Dense(512 * 7 * 7, activation='relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Reshape((7, 7, 512))(x)
 
-    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(x)
-
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+    n_nodes = 512 * 7 * 7
+    gen = tf.keras.layers.Dense(n_nodes)(x)
+    gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
+    # normal
+    gen = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
     # upsample to 14x14
-    x = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
-        2, 2), padding='same')(x)
-
-    x = tf.keras.layers.Activation('relu')(x)
-    x = tf.keras.layers.BatchNormalization()(x)
+    gen = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(
+        2, 2), padding='same')(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
     # upsample to 28x28
-    x = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
-        2, 2), padding='same')(x)
-    generated_image = tf.keras.layers.Activation('tanh')(x)
-    return tf.keras.models.Model([noise, continuous_input, category_input], generated_image)
+    gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
+        2, 2), padding='same')(gen)
+    # tanh output
+    generated_image = tf.keras.layers.Activation('tanh')(gen)
+
+    return tf.keras.Model(inputs=[noise, continuous_input, category_input], outputs=generated_image)
 
 
 def build_discriminator(num_continuous, num_categories):
@@ -70,7 +69,7 @@ def build_discriminator(num_continuous, num_categories):
     category_output = tf.keras.layers.Dense(
         num_categories, activation='softmax')(x)
 
-    return tf.keras.models.Model(image_input, [validity, continuous_output, category_output])
+    return tf.keras.Model(inputs=image_input, outputs=[validity, continuous_output, category_output])
 
 
 def mutual_information_loss(c, c_given_x):
