@@ -8,6 +8,7 @@ import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 import multiprocessing
 import platform
+import time
 
 
 class infoGAN_digits():
@@ -220,18 +221,26 @@ class infoGAN_digits():
             dataset).shuffle(30000).batch(batch_size)
         batch_len = len(batch_dataset)
         train_cycle = 0
+        d_loss_log = []
+        g_loss_log = []
+        REPORT_PERIOD_SEC = 30
+        next_report_time = time.monotonic() + REPORT_PERIOD_SEC
         for epoch in range(0, epochs):
             for batch_cnt, batch_images in enumerate(batch_dataset):
                 train_cycle += 1
                 info_loss, generator_loss, discriminator_loss = self.train_step(
                     batch_images, batch_size)
+                d_loss_log.append(discriminator_loss)
+                g_loss_log.append(generator_loss)
                 status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
                     epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
-                if train_cycle % 100 == 0:
+                now_monotonic_time = time.monotonic()
+                if now_monotonic_time > next_report_time:
+                    next_report_time += REPORT_PERIOD_SEC
                     dump_file_path = "train_images" + os.sep + \
                                      "infoGAN-step-%d.png" % (train_cycle)
-                    self.debug_dump_model_image(dump_file_path)
+                    self.debug_dump_model_image(d_loss_log, g_loss_log, dump_file_path)
                     self.save_model()
 
         return
@@ -291,20 +300,39 @@ class infoGAN_digits():
         plt.show()
         return
 
-    def debug_dump_model_image(self, fileName):
+    def debug_dump_model_image(self, d_loss_log, g_loss_log, fileName):
         digits = [int(i / 10) for i in range(100)]
         image_list = []
         for dig in digits:
             image_generate = self.generate_image(1, dig)
             image_generate = image_generate[0][:, :, 0]
             image_generate = 255 - np.array(image_generate)
-
             image_list.append(image_generate)
 
         image_w_cnt = 10
         image_h_cnt = 10
 
-        def _plot(image_w_cnt, image_h_cnt, image_list, fileName):
+        def _plot(image_w_cnt, image_h_cnt, image_list, d_loss_log, g_loss_log, fileName):
+            dir_name = os.path.dirname(fileName)
+            dir_name = os.path.realpath(dir_name)
+            if not os.path.exists(dir_name):
+                os.makedirs(dir_name, exist_ok=True)
+
+            fig, ax = plt.subplots(dpi=300, figsize=(16, 9))
+            epoch = len(d_loss_log)
+            _x = [i for i in range(0, epoch)]
+
+            ax.plot(_x, d_loss_log, label="discriminator loss")
+            ax.plot(_x, g_loss_log, label="generator loss")
+            ax.set_xlabel("epoch/tick")
+            ax.set_ylabel('loss')
+            ax.set_title('D-G loss')
+            ax.legend()
+            ax.grid(True)
+
+            fig.savefig("infoGAN_loss_plot.png")
+            plt.close(fig)
+
             fig, ax = plt.subplots(image_w_cnt, image_h_cnt, figsize=(10, 10))
             for c in range(0, image_w_cnt):
                 for r in range(0, image_h_cnt):
@@ -315,10 +343,6 @@ class infoGAN_digits():
                     sub_plot.set_yticks([])
                     sub_plot.set_xticks([])
 
-            dir_name = os.path.dirname(fileName)
-            dir_name = os.path.realpath(dir_name)
-            if not os.path.exists(dir_name):
-                os.makedirs(dir_name, exist_ok=True)
             fig.savefig(fileName, dpi=600)
             return
 
@@ -329,11 +353,11 @@ class infoGAN_digits():
                 self.imagePlotProces.join()
                 self.imagePlotProces = None
             process = multiprocessing.Process(target=_plot, args=(
-                image_w_cnt, image_h_cnt, image_list, fileName,))
+                image_w_cnt, image_h_cnt, image_list, d_loss_log, g_loss_log, fileName,))
             process.start()
             self.imagePlotProces = process
         elif platform.system() == "Windows":
-            _plot(image_w_cnt, image_h_cnt, image_list, fileName)
+            _plot(image_w_cnt, image_h_cnt, image_list, d_loss_log, g_loss_log, fileName)
         else:
             print("!!! should not be here !!!")
         return
