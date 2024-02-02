@@ -7,6 +7,7 @@ import sys
 import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 import multiprocessing
+import platform
 
 
 class infoGAN_digits():
@@ -26,7 +27,8 @@ class infoGAN_digits():
         self.checkpoint_path = "checkpoint/"
         self.checkpoint_file_prefix = "infoGAN"
         self.checkpint_manager = tf.train.CheckpointManager(
-            self.checkpoint, directory=self.checkpoint_path, max_to_keep=10, checkpoint_name=self.checkpoint_file_prefix)
+            self.checkpoint, directory=self.checkpoint_path, max_to_keep=10,
+            checkpoint_name=self.checkpoint_file_prefix)
         if not os.path.exists(self.checkpoint_path):
             os.mkdir(self.checkpoint_path)
         return
@@ -227,8 +229,8 @@ class infoGAN_digits():
                     epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
                 if train_cycle % 100 == 0:
-                    dump_file_path = "train_images"+os.sep + \
-                        "infoGAN-step-%d.png" % (train_cycle)
+                    dump_file_path = "train_images" + os.sep + \
+                                     "infoGAN-step-%d.png" % (train_cycle)
                     self.debug_dump_model_image(dump_file_path)
                     self.save_model()
 
@@ -264,7 +266,7 @@ class infoGAN_digits():
         ginput = tf.concat([z, c], axis=-1)
         result = self.generator(ginput, training=False)
         result = np.array(result)
-        result = result*(255/2)+(255/2)
+        result = result * (255 / 2) + (255 / 2)
         result = result.astype(int)
         return result
 
@@ -290,14 +292,12 @@ class infoGAN_digits():
         return
 
     def debug_dump_model_image(self, fileName):
-        if not hasattr(debug_dump_model_image, "imagePlotProcess"):
-            debug_dump_model_image.imagePlotProcess = None
-        digits = [int(i/10) for i in range(100)]
+        digits = [int(i / 10) for i in range(100)]
         image_list = []
         for dig in digits:
             image_generate = self.generate_image(1, dig)
             image_generate = image_generate[0][:, :, 0]
-            image_generate = 255-np.array(image_generate)
+            image_generate = 255 - np.array(image_generate)
 
             image_list.append(image_generate)
 
@@ -321,13 +321,21 @@ class infoGAN_digits():
                 os.makedirs(dir_name, exist_ok=True)
             fig.savefig(fileName, dpi=600)
             return
-        if debug_dump_model_image.imagePlotProcess is not None:
-            debug_dump_model_image.imagePlotProcess.join()
-            debug_dump_model_image.imagePlotProcess = None
-        process = multiprocessing.Process(target=_plot, args=(
-            image_w_cnt, image_h_cnt, image_list, fileName,))
-        process.start()
-        debug_dump_model_image.imagePlotProcess = process
+
+        if platform.system() == "Linux":
+            if not hasattr(self, "imagePlotProces"):
+                self.imagePlotProces = None
+            if self.imagePlotProces is not None:
+                self.imagePlotProces.join()
+                self.imagePlotProces = None
+            process = multiprocessing.Process(target=_plot, args=(
+                image_w_cnt, image_h_cnt, image_list, fileName,))
+            process.start()
+            self.imagePlotProces = process
+        elif platform.system() == "Windows":
+            _plot(image_w_cnt, image_h_cnt, image_list, fileName)
+        else:
+            print("!!! should not be here !!!")
         return
 
 
