@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 # example of training an infogan on mnist
+import re
+
 import numpy as np
 import matplotlib.pyplot as plt
 import multiprocessing
@@ -76,7 +78,33 @@ def build_discriminator(num_continuous, num_categories):
     return tf.keras.Model(inputs=image_input, outputs=[validity, continuous_output, category_output])
 
 
+def remove_old_image():
+    "infoGAN - %d.png"
+    test_image_demo=re.compile(r"infoGAN-(\d+)\.png")
+    rmlist=[]
+    for root,dirs,files in os.walk("."):
+        print(files)
+        for f in files:
+            rm_mark=False
+            if test_image_demo.match(f):
+                rm_mark=True
+
+            if rm_mark:
+                fpath=os.path.join(root, f)
+                rmlist.append(fpath)
+
+    # Remove each matching file
+    for file_path in rmlist:
+        try:
+            os.remove(file_path)
+            print(f"Removed: {file_path}")
+        except Exception as e:
+            print(f"Error removing {file_path}: {e}")
+    return
+
+
 if __name__ == "__main__":
+    remove_old_image()
     if platform.system() == "Linux":
         os.nice(19)
     # Dimensions
