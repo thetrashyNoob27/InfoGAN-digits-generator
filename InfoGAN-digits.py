@@ -341,6 +341,8 @@ class infoGAN_digits():
 
 
 if __name__ == "__main__":
+    if platform.system() == "Linux":
+        os.nice(19)
     gan = infoGAN_digits(64, 1, 10, 1000)
     gan.load_model()
     dataset = gan.process_dataset()
