@@ -34,39 +34,40 @@ class infoGAN_digits():
             os.mkdir(self.checkpoint_path)
         return
 
-    def _model_generator(self):
-        class Generator(tf.keras.Model):
-            def __init__(self):
-                super(Generator, self).__init__()
-                self._layers = []
+    def _generator_internals(self, x):
+        _layers = []
+        _layers.append(tf.keras.layers.Dense(1024, use_bias=False))
+        _layers.append(tf.keras.layers.ReLU())
+        _layers.append(tf.keras.layers.BatchNormalization())
 
-                self._layers.append(tf.keras.layers.Dense(1024, use_bias=False))
-                self._layers.append(tf.keras.layers.ReLU())
-                self._layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.Dense(7 * 7 * 128, use_bias=False))
+        _layers.append(tf.keras.layers.ReLU())
+        _layers.append(tf.keras.layers.BatchNormalization())
 
-                self._layers.append(tf.keras.layers.Dense(7 * 7 * 128, use_bias=False))
-                self._layers.append(tf.keras.layers.ReLU())
-                self._layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.Reshape([7, 7, 128]))
 
-                self._layers.append(tf.keras.layers.Reshape([7, 7, 128]))
+        _layers.append(tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same"))
+        _layers.append(tf.keras.layers.ReLU())
+        _layers.append(tf.keras.layers.BatchNormalization())
 
-                self._layers.append(tf.keras.layers.Conv2DTranspose(
-                    64, (4, 4), strides=(2, 2), padding="same"))
-                self._layers.append(tf.keras.layers.ReLU())
-                self._layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding="same"))
 
-                self._layers.append(tf.keras.layers.Conv2DTranspose(
-                    1, (4, 4), strides=(2, 2), padding="same"))
+        _layers.append(tf.keras.layers.Activation('tanh'))
 
-                self._layers.append(tf.keras.layers.Activation('tanh'))
+        for l in _layers:
+            x = l(x)
+        return x
 
-            def call(self, x, training=True):
-                for layer in self._layers:
-                    x = layer(x, training=training)
-                return x
+    def _model_generator(self, noise_dim=64, continuous_dim=0, categories_dim=10):
 
-        g = Generator()
-        return g
+        noise = tf.keras.layers.Input(shape=(noise_dim,))
+        continuous = tf.keras.layers.Input(shape=(continuous_dim,))
+        category = tf.keras.layers.Input(shape=(categories_dim,))
+        input_layer = tf.keras.layers.Concatenate()([noise, continuous, category])
+        gen = self._generator_internals(input_layer)
+
+        gen_model = tf.keras.Model(inputs=[noise, continuous, category], outputs=gen)
+        return gen_model
 
     def _model_discriminator(self):
         class Discriminator(tf.keras.Model):
@@ -137,13 +138,14 @@ class infoGAN_digits():
         return q
 
     def generator_input(self, batch, digit_value=None):
-        z = tfd.Uniform(low=-1.0, high=1.0).sample((batch, 64))
+        noise = tfd.Uniform(low=-1.0, high=1.0).sample((batch, 64))
+        continuous = np.random.uniform(-1, 1, (batch, 0))
         if digit_value is None:
-            c = tfd.Categorical(probs=tf.ones([10]) * 0.1).sample([batch, ])
+            category = tfd.Categorical(probs=tf.ones([10]) * 0.1).sample([batch, ])
         else:
-            c = tf.ones([batch], dtype=tf.int32) * digit_value
-        c = tf.one_hot(c, 10)
-        return z, c
+            category = tf.ones([batch], dtype=tf.int32) * digit_value
+        category = tf.one_hot(category, 10)
+        return noise, continuous, category
 
     def calc_info_loss(self, c, c_hat):
         loss = tf.keras.losses.CategoricalCrossentropy(
@@ -164,14 +166,12 @@ class infoGAN_digits():
 
     def train_step(self, image, batch_size):
         with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
-            z, c = self.generator_input(batch_size)
-            generator_images = gan.generator(
-                tf.concat([z, c], axis=-1), training=True)
-            discriminator_fake, Q_input = self.discriminator(
-                generator_images, training=True)
+            z, ctn, cat = self.generator_input(batch_size)
+            generator_images = gan.generator([z, ctn, cat], training=True)
+            discriminator_fake, Q_input = self.discriminator(generator_images, training=True)
             discriminator_real, _ = self.discriminator(image, training=True)
             c_hat = self.Q(Q_input)
-            info_loss = self.calc_info_loss(c, c_hat)
+            info_loss = self.calc_info_loss(cat, c_hat)
             generator_loss = self.calc_generator_loss(discriminator_fake)
             discriminator_loss = self.calc_discriminator_loss(
                 discriminator_real, discriminator_fake)
@@ -252,9 +252,8 @@ class infoGAN_digits():
         return
 
     def generate_image(self, batch, digit):
-        z, c = self.generator_input(batch, digit)
-        ginput = tf.concat([z, c], axis=-1)
-        result = self.generator(ginput, training=False)
+        z, a, c = self.generator_input(batch, digit)
+        result = self.generator([z, a, c], training=False)
         result = np.array(result)
         result = result * (255 / 2) + (255 / 2)
         result = result.astype(int)
