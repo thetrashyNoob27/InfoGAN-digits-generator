@@ -24,8 +24,10 @@ from matplotlib import pyplot
 
 import numpy as np
 import tensorflow as tf
+
 np.random.seed(16)
 tf.random.set_seed(16)
+
 
 # define the standalone discriminator model
 
@@ -55,8 +57,7 @@ def define_discriminator(n_cat, in_shape=(28, 28, 1)):
     # define d model
     d_model = Model(in_image, out_classifier)
     # compile d model
-    d_model.compile(loss='binary_crossentropy', optimizer=Adam(
-        learning_rate=0.0002, beta_1=0.5))
+    d_model.compile(loss='binary_crossentropy', optimizer=Adam(learning_rate=0.0002, beta_1=0.5))
     # create q model layers
     q = Dense(128)(d)
     q = BatchNormalization()(q)
@@ -66,6 +67,7 @@ def define_discriminator(n_cat, in_shape=(28, 28, 1)):
     # define q model
     q_model = Model(in_image, out_codes)
     return d_model, q_model
+
 
 # define the standalone generator model
 
@@ -99,6 +101,7 @@ def define_generator(gen_input_size):
     model = Model(in_lat, out_layer)
     return model
 
+
 # define the combined discriminator, generator and q network model
 
 
@@ -115,9 +118,9 @@ def define_gan(g_model, d_model, q_model):
     model = Model(g_model.input, [d_output, q_output])
     # compile model
     opt = Adam(learning_rate=0.0002, beta_1=0.5)
-    model.compile(loss=['binary_crossentropy',
-                  'categorical_crossentropy'], optimizer=opt)
+    model.compile(loss=['binary_crossentropy', 'categorical_crossentropy'], optimizer=opt)
     return model
+
 
 # load images
 
@@ -134,6 +137,7 @@ def load_real_samples():
     print(X.shape)
     return X
 
+
 # select real samples
 
 
@@ -145,6 +149,7 @@ def generate_real_samples(dataset, n_samples):
     # generate class labels
     y = ones((n_samples, 1))
     return X, y
+
 
 # generate points in latent space as input for the generator
 
@@ -162,6 +167,7 @@ def generate_latent_points(latent_dim, n_cat, n_samples):
     z_input = hstack((z_latent, cat_codes))
     return [z_input, cat_codes]
 
+
 # use the generator to generate n fake examples, with class labels
 
 
@@ -174,6 +180,7 @@ def generate_fake_samples(generator, latent_dim, n_cat, n_samples):
     y = zeros((n_samples, 1))
     return images, y
 
+
 # generate samples and save as a plot and save the model
 
 
@@ -184,6 +191,7 @@ def summarize_performance(step, g_model, gan_model, latent_dim, n_cat, n_samples
     X, _ = generate_fake_samples(g_model, latent_dim, n_cat, n_samples)
     # scale from [-1,1] to [0,1]
     X = (X + 1) / 2.0
+
     # plot images
 
     def _plot(step, X):
@@ -195,9 +203,10 @@ def summarize_performance(step, g_model, gan_model, latent_dim, n_cat, n_samples
             # plot raw pixel data
             pyplot.imshow(X[i, :, :, 0], cmap='gray_r')
         # save plot to file
-        filename1 = 'generated_plot_%04d.png' % (step+1)
+        filename1 = 'generated_plot_%04d.png' % (step + 1)
         pyplot.savefig(filename1)
         pyplot.close()
+
     import multiprocessing
     if summarize_performance.imagePlotProcess is not None:
         summarize_performance.imagePlotProcess.join()
@@ -208,10 +217,10 @@ def summarize_performance(step, g_model, gan_model, latent_dim, n_cat, n_samples
     summarize_performance.imagePlotProcess = process
 
     # save the generator model
-    filename2 = 'model_%04d.tf' % (step+1)
+    filename2 = 'model_%04d.tf' % (step + 1)
     g_model.save(filename2, save_format="tf")
     # save the gan model
-    filename3 = 'gan_model_%04d.tf' % (step+1)
+    filename3 = 'gan_model_%04d.tf' % (step + 1)
     gan_model.save(filename3, save_format="tf")
     print('>Saved: %s, and %s' % (filename2, filename3))
 
@@ -237,6 +246,7 @@ def load_model(gan_model):
     for k, v in gan_model_files.items():
         shutil.rmtree(v)
     return latestSave
+
 
 # train the generator and discriminator
 
@@ -267,9 +277,9 @@ def train(g_model, d_model, gan_model, dataset, latent_dim, n_cat, n_epochs=100,
         _, g_1, g_2 = gan_model.train_on_batch(z_input, [y_gan, cat_codes])
         # summarize loss on this batch
         print('>%d, d[%.3f,%.3f], g[%.3f] q[%.3f]' %
-              (i+1, d_loss1, d_loss2, g_1, g_2))
+              (i + 1, d_loss1, d_loss2, g_1, g_2))
         # evaluate the model performance every 'epoch'
-        if (i+1) % 100 == 0:
+        if (i + 1) % 100 == 0:
             summarize_performance(i, g_model, gan_model, latent_dim, n_cat)
 
 
