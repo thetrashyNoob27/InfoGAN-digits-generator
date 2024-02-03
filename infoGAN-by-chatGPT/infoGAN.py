@@ -145,8 +145,6 @@ if __name__ == "__main__":
     category_input = tf.keras.layers.Input(shape=(num_categories,))
     generated_image = generator([noise, continuous_input, category_input])
     for layer in discriminator.layers:
-        if isinstance(layer, tf.keras.layers.BatchNormalization):
-            continue
         layer.trainable = False
     validity, continuous_output, category_output = discriminator(generated_image)
 
@@ -196,15 +194,11 @@ if __name__ == "__main__":
             real_images = b
 
             noise = np.random.normal(0, 1, (half_batch, latent_dim))
-            sampled_categories = np.random.randint(
-                0, num_categories, half_batch)
-            sampled_categories_one_hot = tf.keras.utils.to_categorical(
-                sampled_categories, num_categories)
-            sampled_continuous = np.random.uniform(-1,
-                                                   1, (half_batch, num_continuous))
+            sampled_categories = np.random.randint(0, num_categories, half_batch)
+            sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
+            sampled_continuous = np.random.uniform(-1, 1, (half_batch, num_continuous))
 
-            generated_images = generator.predict(
-                [noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
+            generated_images = generator.predict([noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
 
             real_predict, _, _ = discriminator.predict(real_images, verbose=0)
             fake_predict, _, _ = discriminator.predict(generated_images, verbose=0)
@@ -216,10 +210,8 @@ if __name__ == "__main__":
             valid = np.ones((half_batch, 1))
             fake = np.zeros((half_batch, 1))
 
-            d_loss_real = discriminator.train_on_batch(
-                real_images, [valid, sampled_continuous, sampled_categories_one_hot], return_dict=True)
-            d_loss_fake = discriminator.train_on_batch(
-                generated_images, [fake, sampled_continuous, sampled_categories_one_hot], return_dict=True)
+            d_loss_real = discriminator.train_on_batch(real_images, [valid, sampled_continuous, sampled_categories_one_hot], return_dict=True)
+            d_loss_fake = discriminator.train_on_batch(generated_images, [fake, sampled_continuous, sampled_categories_one_hot], return_dict=True)
             loss_keys = ()
             loss_keys |= d_loss_real.keys()
             loss_keys |= d_loss_fake.keys()
@@ -229,13 +221,10 @@ if __name__ == "__main__":
             del loss_keys
 
             # Train generator
-            noise = np.random.normal(0, 1, (batch_size, latent_dim))
-            sampled_categories = np.random.randint(
-                0, num_categories, batch_size)
-            sampled_categories_one_hot = tf.keras.utils.to_categorical(
-                sampled_categories, num_categories)
-            sampled_continuous = np.random.uniform(-1,
-                                                   1, (batch_size, num_continuous))
+            noise = np.random.normal(-1, 1, (batch_size, latent_dim))
+            sampled_categories = np.random.randint(0, num_categories, batch_size)
+            sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
+            sampled_continuous = np.random.uniform(-1, 1, (batch_size, num_continuous))
 
             valid = np.ones((batch_size, 1))
 
