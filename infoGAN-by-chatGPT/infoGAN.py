@@ -49,7 +49,7 @@ def build_generator(latent_dim, num_continuous, num_categories):
     gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
         2, 2), padding='same')(gen)
     # tanh output
-    generated_image = tf.keras.layers.Activation('tanh')(gen)
+    generated_image = tf.keras.layers.Activation('tanh', name="generator_output")(gen)
 
     return tf.keras.Model(inputs=[noise, continuous_input, category_input], outputs=generated_image)
 
@@ -68,25 +68,21 @@ def build_discriminator(num_continuous, num_categories):
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
-    d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
-    d = tf.keras.layers.BatchNormalization()(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
-
-    d = tf.keras.layers.Conv2D(32, (4, 4), padding='same')(d)
+    d = tf.keras.layers.Conv2D(16, (4, 4), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
     # flatten feature maps
     d = tf.keras.layers.Flatten()(d)
 
-    validity = tf.keras.layers.Dense(1, activation='sigmoid')(d)
+    validity = tf.keras.layers.Dense(1, activation='sigmoid', name="real_fake_discrimination")(d)
 
     # Auxiliary outputs
     x = d
     continuous_output = tf.keras.layers.Dense(
-        num_continuous, activation='linear')(x)
+        num_continuous, activation='linear', name="Q_linear")(x)
     category_output = tf.keras.layers.Dense(
-        num_categories, activation='softmax')(x)
+        num_categories, activation='softmax', name="Q_classify")(x)
 
     return tf.keras.Model(inputs=image_input, outputs=[validity, continuous_output, category_output])
 
@@ -141,8 +137,7 @@ if __name__ == "__main__":
         generator = build_generator(latent_dim, num_continuous, num_categories)
         discriminator = build_discriminator(num_continuous, num_categories)
 
-        discriminator.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005), loss=[
-            wassertein_loss, 'mse', 'categorical_crossentropy'])
+        discriminator.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005), loss={'real_fake_discrimination': wassertein_loss, 'Q_linear': 'mse', 'Q_classify': 'categorical_crossentropy'})
 
     # InfoGAN model
     noise = tf.keras.layers.Input(shape=(latent_dim,))
@@ -153,14 +148,16 @@ if __name__ == "__main__":
         if isinstance(layer, tf.keras.layers.BatchNormalization):
             continue
         layer.trainable = False
-    validity, continuous_output, category_output = discriminator(
-        generated_image)
-    info_gan_model = tf.keras.models.Model([noise, continuous_input, category_input], [
-        validity, continuous_output, category_output])
+    validity, continuous_output, category_output = discriminator(generated_image)
+
+    validity = tf.keras.layers.Lambda(lambda x: x, name="validity")(validity)
+    continuous_output = tf.keras.layers.Lambda(lambda x: x, name="continuous_output")(continuous_output)
+    category_output = tf.keras.layers.Lambda(lambda x: x, name="category_output")(category_output)
+
+    info_gan_model = tf.keras.Model(inputs=[noise, continuous_input, category_input], outputs=[validity, continuous_output, category_output])
 
     info_gan_model.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005),
-                           loss=[wassertein_loss, 'mse',
-                                 'categorical_crossentropy'],
+                           loss={'validity': wassertein_loss, 'continuous_output': 'mse', 'category_output': 'categorical_crossentropy'},
                            loss_weights=[1, 0.5, 1])
     # prepare dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
@@ -220,10 +217,16 @@ if __name__ == "__main__":
             fake = np.zeros((half_batch, 1))
 
             d_loss_real = discriminator.train_on_batch(
-                real_images, [valid, sampled_continuous, sampled_categories_one_hot])
+                real_images, [valid, sampled_continuous, sampled_categories_one_hot], return_dict=True)
             d_loss_fake = discriminator.train_on_batch(
-                generated_images, [fake, sampled_continuous, sampled_categories_one_hot])
-            d_loss = 0.5 * np.add(d_loss_real, d_loss_fake)
+                generated_images, [fake, sampled_continuous, sampled_categories_one_hot], return_dict=True)
+            loss_keys = ()
+            loss_keys |= d_loss_real.keys()
+            loss_keys |= d_loss_fake.keys()
+            d_loss = {}
+            for k in loss_keys:
+                d_loss[k] = (d_loss_real[k] + d_loss_fake[k]) / 2
+            del loss_keys
 
             # Train generator
             noise = np.random.normal(0, 1, (batch_size, latent_dim))
@@ -236,20 +239,18 @@ if __name__ == "__main__":
 
             valid = np.ones((batch_size, 1))
 
-            g_loss = info_gan_model.train_on_batch([noise, sampled_continuous, sampled_categories_one_hot],
-                                                   [valid, sampled_continuous, sampled_categories_one_hot])
+            g_loss = info_gan_model.train_on_batch([noise, sampled_continuous, sampled_categories_one_hot], [valid, sampled_continuous, sampled_categories_one_hot], return_dict=True)
 
             # log the loss
-            d_loss_log.append(d_loss[0])
-            g_loss_log.append(g_loss[0])
+            d_loss_log.append(d_loss['loss'])
+            g_loss_log.append(g_loss['loss'])
 
             # Print progress
             plot_process = None
             now_monotonic_time = time.monotonic()
             if now_monotonic_time > next_report_time:
                 next_report_time += REPORT_PERIOD_SEC
-                print(
-                    f"{trainCnt} [D loss: {d_loss[0]} | D accuracy: {100 * d_loss[1]}] [G loss: {g_loss[0]}]")
+                print("[%d] D_loss%10.4f: G_loss:%10.4f" % (trainCnt, d_loss['loss'], g_loss['loss']))
 
                 # save model
                 generator.save("infoGAN-model-G.tf", save_format="tf")
