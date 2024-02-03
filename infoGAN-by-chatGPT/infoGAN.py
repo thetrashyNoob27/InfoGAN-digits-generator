@@ -23,6 +23,10 @@ def build_generator(latent_dim, num_continuous, num_categories):
         [noise, continuous_input, category_input])
     gen = x
 
+    gen = tf.keras.layers.Dense(1024)(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+    gen = tf.keras.layers.BatchNormalization()(gen)
+
     n_nodes = 512 * 7 * 7
     gen = tf.keras.layers.Dense(n_nodes)(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
@@ -65,6 +69,9 @@ def build_discriminator(num_continuous, num_categories):
 
     # flatten feature maps
     d = tf.keras.layers.Flatten()(d)
+    d = tf.keras.layers.Dense(1000)(d)
+    d = tf.keras.layers.BatchNormalization()(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
     validity = tf.keras.layers.Dense(1, activation='sigmoid', name="real_fake_discrimination")(d)
 
@@ -72,6 +79,9 @@ def build_discriminator(num_continuous, num_categories):
 
     # Auxiliary outputs
     x = d
+    x = tf.keras.layers.Dense(100)(x)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     continuous_output = tf.keras.layers.Dense(
         num_continuous, activation='linear', name="Q_linear")(x)
     category_output = tf.keras.layers.Dense(
@@ -189,7 +199,7 @@ if __name__ == "__main__":
             # Train discriminator
             real_images = b
 
-            noise = np.random.normal(0, 1, (half_batch, latent_dim))
+            noise = np.random.normal(-1, 1, (half_batch, latent_dim))
             sampled_categories = np.random.randint(0, num_categories, half_batch)
             sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
             sampled_continuous = np.random.uniform(-1, 1, (half_batch, num_continuous))
@@ -238,7 +248,7 @@ if __name__ == "__main__":
                 quility_control.save("infoGAN-model-Q.tf", save_format="tf")
 
                 # plot image process
-                noise = np.random.normal(0, 1, (100, latent_dim))
+                noise = np.random.normal(-1, 1, (100, latent_dim))
                 cat_array = np.zeros((100, num_categories))
                 for i in range(0, 100):
                     idx = i // num_categories
