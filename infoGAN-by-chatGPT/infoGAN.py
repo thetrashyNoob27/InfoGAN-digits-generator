@@ -59,17 +59,17 @@ def build_discriminator(num_continuous, num_categories):
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
-    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same')(d)
+    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
-    d = tf.keras.layers.Conv2D(256, (4, 4), padding='same')(d)
+    d = tf.keras.layers.Conv2D(1, (4, 4), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
     # flatten feature maps
     d = tf.keras.layers.Flatten()(d)
-    d = tf.keras.layers.Dense(1000)(d)
+    d = tf.keras.layers.Dense(23)(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
@@ -79,7 +79,7 @@ def build_discriminator(num_continuous, num_categories):
 
     # Auxiliary outputs
     x = d
-    x = tf.keras.layers.Dense(100)(x)
+    x = tf.keras.layers.Dense(23)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     continuous_output = tf.keras.layers.Dense(
@@ -199,7 +199,7 @@ if __name__ == "__main__":
             # Train discriminator
             real_images = b
 
-            noise = np.random.normal(-1, 1, (half_batch, latent_dim))
+            noise = np.random.normal(0, 1, (half_batch, latent_dim))
             sampled_categories = np.random.randint(0, num_categories, half_batch)
             sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
             sampled_continuous = np.random.uniform(-1, 1, (half_batch, num_continuous))
@@ -222,7 +222,7 @@ if __name__ == "__main__":
             d_loss = discriminator.train_on_batch(d_train_input, d_train_label, return_dict=True)
 
             # Train generator
-            noise = np.random.normal(-1, 1, (batch_size, latent_dim))
+            noise = np.random.normal(0, 1, (batch_size, latent_dim))
             sampled_categories = np.random.randint(0, num_categories, batch_size)
             sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
             sampled_continuous = np.random.uniform(-1, 1, (batch_size, num_continuous))
@@ -248,7 +248,7 @@ if __name__ == "__main__":
                 quility_control.save("infoGAN-model-Q.tf", save_format="tf")
 
                 # plot image process
-                noise = np.random.normal(-1, 1, (100, latent_dim))
+                noise = np.random.normal(0, 1, (100, latent_dim))
                 cat_array = np.zeros((100, num_categories))
                 for i in range(0, 100):
                     idx = i // num_categories
@@ -256,11 +256,9 @@ if __name__ == "__main__":
                 sampled_categories = cat_array
                 del cat_array
 
-                sampled_continuous = np.random.uniform(-1,
-                                                       1, (100, num_continuous))
+                sampled_continuous = np.random.uniform(-1, 1, (100, num_continuous))
 
-                generated_images = generator.predict(
-                    [noise, sampled_continuous, sampled_categories], verbose=0)
+                generated_images = generator.predict([noise, sampled_continuous, sampled_categories], verbose=0)
 
 
                 # print(generated_images.shape)#(100, 28, 28, 1)
