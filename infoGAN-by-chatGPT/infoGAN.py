@@ -23,11 +23,6 @@ def build_generator(latent_dim, num_continuous, num_categories):
         [noise, continuous_input, category_input])
     gen = x
 
-    gen = tf.keras.layers.Dense(1000)(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
-    gen = tf.keras.layers.Dropout(0.05)(gen)
-
     n_nodes = 512 * 7 * 7
     gen = tf.keras.layers.Dense(n_nodes)(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
@@ -35,19 +30,17 @@ def build_generator(latent_dim, num_continuous, num_categories):
     gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # normal
-    gen = tf.keras.layers.Conv2D(512, (4, 4), padding='same')(gen)
+    gen = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 14x14
-    gen = tf.keras.layers.Conv2DTranspose(256, (4, 4), strides=(
-        2, 2), padding='same')(gen)
+    gen = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding='same')(gen)
     gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 28x28
-    gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
-        2, 2), padding='same')(gen)
+    gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding='same')(gen)
     # tanh output
     generated_image = tf.keras.layers.Activation('tanh', name="generator_output")(gen)
 
@@ -58,17 +51,15 @@ def build_discriminator(num_continuous, num_categories):
     image_input = tf.keras.layers.Input(shape=(28, 28, 1))
 
     # downsample to 14x14
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(
-        2, 2), padding='same')(image_input)
+    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(image_input)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
-    d = tf.keras.layers.Conv2D(32, (4, 4), strides=(2, 2),
-                               padding='same')(d)
+    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
-    d = tf.keras.layers.Conv2D(16, (4, 4), padding='same')(d)
+    d = tf.keras.layers.Conv2D(256, (4, 4), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
 
@@ -77,6 +68,8 @@ def build_discriminator(num_continuous, num_categories):
 
     validity = tf.keras.layers.Dense(1, activation='sigmoid', name="real_fake_discrimination")(d)
 
+    discrimator_model = tf.keras.Model(inputs=image_input, outputs=validity)
+
     # Auxiliary outputs
     x = d
     continuous_output = tf.keras.layers.Dense(
@@ -84,7 +77,8 @@ def build_discriminator(num_continuous, num_categories):
     category_output = tf.keras.layers.Dense(
         num_categories, activation='softmax', name="Q_classify")(x)
 
-    return tf.keras.Model(inputs=image_input, outputs=[validity, continuous_output, category_output])
+    quility_control_model = tf.keras.Model(inputs=image_input, outputs=[continuous_output, category_output])
+    return discrimator_model, quility_control_model
 
 
 def remove_old_image():
@@ -124,7 +118,7 @@ if __name__ == "__main__":
     if platform.system() == "Linux":
         os.nice(19)
     # Dimensions
-    latent_dim = 200
+    latent_dim = 62
     num_continuous = 2
     num_categories = 10
 
@@ -132,12 +126,13 @@ if __name__ == "__main__":
     try:
         generator = tf.keras.models.load_model("infoGAN-model-G.tf")
         discriminator = tf.keras.models.load_model("infoGAN-model-D.tf")
+        quility_control = tf.keras.models.load_model("infoGAN-model-Q.tf")
         print("load model success")
     except OSError as e:
         generator = build_generator(latent_dim, num_continuous, num_categories)
-        discriminator = build_discriminator(num_continuous, num_categories)
+        discriminator, quility_control = build_discriminator(num_continuous, num_categories)
 
-        discriminator.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005), loss={'real_fake_discrimination': wassertein_loss, 'Q_linear': 'mse', 'Q_classify': 'categorical_crossentropy'})
+        discriminator.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5), loss={'real_fake_discrimination': "binary_crossentropy"})
 
     # InfoGAN model
     noise = tf.keras.layers.Input(shape=(latent_dim,))
@@ -146,7 +141,8 @@ if __name__ == "__main__":
     generated_image = generator([noise, continuous_input, category_input])
     for layer in discriminator.layers:
         layer.trainable = False
-    validity, continuous_output, category_output = discriminator(generated_image)
+    validity = discriminator(generated_image)
+    continuous_output, category_output = quility_control(generated_image)
 
     validity = tf.keras.layers.Lambda(lambda x: x, name="validity")(validity)
     continuous_output = tf.keras.layers.Lambda(lambda x: x, name="continuous_output")(continuous_output)
@@ -154,8 +150,8 @@ if __name__ == "__main__":
 
     info_gan_model = tf.keras.Model(inputs=[noise, continuous_input, category_input], outputs=[validity, continuous_output, category_output])
 
-    info_gan_model.compile(optimizer=tf.keras.optimizers.RMSprop(learning_rate=0.00005),
-                           loss={'validity': wassertein_loss, 'continuous_output': 'mse', 'category_output': 'categorical_crossentropy'},
+    info_gan_model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002, beta_1=0.5),
+                           loss={'validity': "binary_crossentropy", 'continuous_output': 'mse', 'category_output': 'categorical_crossentropy'},
                            loss_weights=[1, 0.5, 1])
     # prepare dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
@@ -164,7 +160,7 @@ if __name__ == "__main__":
     x = np.expand_dims(x, axis=-1)
     del x_train, y_train, x_test, y_test
     x_train = (x - 127.5) / 127.5
-    x_train = x_train.reshape(x_train.shape + (1,)).astype("float32")
+    x_train = x_train.astype("float32")
 
     # Build and compile the generator, discriminator, and InfoGAN models
     # (As per the previous example code)
@@ -200,8 +196,8 @@ if __name__ == "__main__":
 
             generated_images = generator.predict([noise, sampled_continuous, sampled_categories_one_hot], verbose=0)
 
-            real_predict, _, _ = discriminator.predict(real_images, verbose=0)
-            fake_predict, _, _ = discriminator.predict(generated_images, verbose=0)
+            real_predict = discriminator.predict(real_images, verbose=0)
+            fake_predict = discriminator.predict(generated_images, verbose=0)
             generator_score = np.mean(fake_predict)
             discriminator_score = np.mean([np.mean(real_predict), 1 - generator_score])
             g_score_log.append(generator_score)
@@ -210,15 +206,10 @@ if __name__ == "__main__":
             valid = np.ones((half_batch, 1))
             fake = np.zeros((half_batch, 1))
 
-            d_loss_real = discriminator.train_on_batch(real_images, [valid, sampled_continuous, sampled_categories_one_hot], return_dict=True)
-            d_loss_fake = discriminator.train_on_batch(generated_images, [fake, sampled_continuous, sampled_categories_one_hot], return_dict=True)
-            loss_keys = ()
-            loss_keys |= d_loss_real.keys()
-            loss_keys |= d_loss_fake.keys()
-            d_loss = {}
-            for k in loss_keys:
-                d_loss[k] = (d_loss_real[k] + d_loss_fake[k]) / 2
-            del loss_keys
+            d_train_input = np.concatenate([real_images, generated_images], axis=0)
+            d_train_label = np.concatenate([valid, fake], axis=0)
+
+            d_loss = discriminator.train_on_batch(d_train_input, d_train_label, return_dict=True)
 
             # Train generator
             noise = np.random.normal(-1, 1, (batch_size, latent_dim))
@@ -244,6 +235,7 @@ if __name__ == "__main__":
                 # save model
                 generator.save("infoGAN-model-G.tf", save_format="tf")
                 discriminator.save("infoGAN-model-D.tf", save_format="tf")
+                quility_control.save("infoGAN-model-Q.tf", save_format="tf")
 
                 # plot image process
                 noise = np.random.normal(0, 1, (100, latent_dim))
