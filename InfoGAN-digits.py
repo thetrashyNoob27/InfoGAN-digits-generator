@@ -9,21 +9,28 @@ from tensorflow_probability import distributions as tfd
 import multiprocessing
 import platform
 import time
+import inspect
 
 
 class infoGAN_digits():
-    def __init__(self):
-        self.generator = self._model_generator()
-        self.discriminator = self._model_discriminator()
-        self.Q = self._model_Q()
+    def __init__(self, noise_dim, continuous_dim, categories_dim, mid_feautures):
+        self.noise_dim = noise_dim
+        self.continuous_dim = continuous_dim
+        self.categories_dim = categories_dim
+        self.mid_feautures = mid_feautures
+        self.generator = self._model_generator(noise_dim, continuous_dim, categories_dim)
+        self.discriminator_base = self._model_discriminator_base(mid_feautures)
+        self.discriminator = self._model_discriminator(mid_feautures)
+        self.quaility_control = self._model_quality_control(mid_feautures, continuous_dim, categories_dim)
 
         self.generator_optimizer = tf.keras.optimizers.Adam(1e-3)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-4)
         self.checkpoint = tf.train.Checkpoint(generator_optimizer=self.generator_optimizer,
                                               discriminator_optimizer=self.discriminator_optimizer,
                                               generator=self.generator,
+                                              discriminator_base=self.discriminator_base,
                                               discriminator=self.discriminator,
-                                              Q=self.Q)
+                                              quaility_control=self.quaility_control)
 
         self.checkpoint_path = "checkpoint/"
         self.checkpoint_file_prefix = "infoGAN"
@@ -58,8 +65,7 @@ class infoGAN_digits():
             x = l(x)
         return x
 
-    def _model_generator(self, noise_dim=64, continuous_dim=0, categories_dim=10):
-
+    def _model_generator(self, noise_dim, continuous_dim, categories_dim):
         noise = tf.keras.layers.Input(shape=(noise_dim,))
         continuous = tf.keras.layers.Input(shape=(continuous_dim,))
         category = tf.keras.layers.Input(shape=(categories_dim,))
@@ -69,87 +75,78 @@ class infoGAN_digits():
         gen_model = tf.keras.Model(inputs=[noise, continuous, category], outputs=gen)
         return gen_model
 
-    def _model_discriminator(self):
-        class Discriminator(tf.keras.Model):
-            def __init__(self):
-                super(Discriminator, self).__init__()
+    def _discriminator_base_internals(self, x):
+        common_layers = []
+        _layer_prefix = "discriminator_base_internals"
 
-                self.common_layers = []
+        common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same", name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_"))
+        common_layers.append(tf.keras.layers.BatchNormalization())
+        common_layers.append(tf.keras.layers.LeakyReLU())
 
-                self.common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same"))
-                self.common_layers.append(tf.keras.layers.BatchNormalization())
-                self.common_layers.append(tf.keras.layers.LeakyReLU())
+        common_layers.append(tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same"))
+        common_layers.append(tf.keras.layers.BatchNormalization())
+        common_layers.append(tf.keras.layers.LeakyReLU())
 
-                self.common_layers.append(tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same"))
-                self.common_layers.append(tf.keras.layers.BatchNormalization())
-                self.common_layers.append(tf.keras.layers.LeakyReLU())
+        common_layers.append(tf.keras.layers.Flatten())
 
-                self.common_layers.append(tf.keras.layers.Flatten())
+        common_layers.append(tf.keras.layers.Dense(1024))
+        common_layers.append(tf.keras.layers.BatchNormalization())
+        common_layers.append(tf.keras.layers.LeakyReLU())
 
-                self.common_layers.append(tf.keras.layers.Dense(1024))
-                self.common_layers.append(tf.keras.layers.BatchNormalization())
-                self.common_layers.append(tf.keras.layers.LeakyReLU())
+        for l in common_layers:
+            x = l(x)
+        return x
 
-                self.d_layers = []
-                self.d_layers.append(tf.keras.layers.Dense(1))
+    def _model_discriminator_base(self, mid_feautures):
+        _layer_prefix = "model_discriminator_base"
+        input_shape = self.generator.layers[-1].output_shape[1:]
+        generator_output = tf.keras.layers.Input(shape=input_shape, name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_")
+        mid = self._discriminator_base_internals(generator_output)
+        mid = tf.keras.layers.Dense(mid_feautures)(mid)
 
-            def call(self, x, training=True):
-                for layer in self.common_layers:
-                    x = layer(x, training=training)
-                mid = x
+        discriminator_base_model = tf.keras.Model(inputs=generator_output, outputs=mid)
 
-                D = x
-                for layer in self.d_layers:
-                    D = layer(D)
+        return discriminator_base_model
 
-                return D, mid
+    def _model_discriminator(self, mid_feautures):
+        base_output = tf.keras.layers.Input(shape=(mid_feautures,))
+        discrim = tf.keras.layers.Dense(1)(base_output)
+        discrim = tf.keras.activations.sigmoid(discrim)
+        discriminator_model = tf.keras.Model(inputs=base_output, outputs=discrim)
+        return discriminator_model
 
-        d = Discriminator()
-        return d
+    def _model_quality_control_internals(self, x):
+        _layer_prefix = "model_quality_control_internals"
+        qc_layers = []
+        qc_layers.append(tf.keras.layers.Dense(128, name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_"))
+        qc_layers.append(tf.keras.layers.BatchNormalization())
+        qc_layers.append(tf.keras.layers.LeakyReLU())
+        for l in qc_layers:
+            x = l(x)
+        return x
 
-    def _model_Q(self):
-        class QNet(tf.keras.Model):
-            def __init__(self):
-                super(QNet, self).__init__()
+    def _model_quality_control(self, mid_feautures, continuous, categorys):
+        base_output = tf.keras.layers.Input(shape=(mid_feautures,))
+        x = self._model_quality_control_internals(base_output)
 
-                # base model part
-                self.base_layer = []
+        continue_ = tf.keras.layers.Dense(continuous, activation='linear', name="debug_" + str(inspect.currentframe().f_lineno))(x)
+        classify = tf.keras.layers.Dense(categorys, activation='softmax', name="debug_" + str(inspect.currentframe().f_lineno))(x)
 
-                self.base_layer.append(tf.keras.layers.Dense(128))
-                self.base_layer.append(tf.keras.layers.BatchNormalization())
-                self.base_layer.append(tf.keras.layers.LeakyReLU())
-
-                # c_hat_layer
-                self.c_hat_branch = []
-                self.c_hat_branch.append(tf.keras.layers.Dense(10))
-
-                # z_hat_layer
-
-            def call(self, x, training=True):
-                for layer in self.base_layer:
-                    x = layer(x)
-
-                c_hat = x
-                for layer in self.c_hat_branch:
-                    c_hat = layer(x)
-                return c_hat
-
-        q = QNet()
-        return q
+        qc_model = tf.keras.Model(inputs=base_output, outputs=[continue_, classify])
+        return qc_model
 
     def generator_input(self, batch, digit_value=None):
-        noise = tfd.Uniform(low=-1.0, high=1.0).sample((batch, 64))
-        continuous = np.random.uniform(-1, 1, (batch, 0))
+        noise = np.random.uniform(-1, 1, (batch, self.noise_dim))
+        continuous = np.random.uniform(-1, 1, (batch, self.continuous_dim))
         if digit_value is None:
-            category = tfd.Categorical(probs=tf.ones([10]) * 0.1).sample([batch, ])
+            sampled_categories = np.random.randint(0, self.categories_dim, (batch, 1))
         else:
-            category = tf.ones([batch], dtype=tf.int32) * digit_value
-        category = tf.one_hot(category, 10)
+            sampled_categories=np.full((batch,1),digit_value)
+        category = tf.keras.utils.to_categorical(sampled_categories, self.categories_dim)
         return noise, continuous, category
 
-    def calc_info_loss(self, c, c_hat):
-        loss = tf.keras.losses.CategoricalCrossentropy(
-            from_logits=True)(c, c_hat)
+    def calc_info_loss(self, c, c_hat, a, a_hat):
+        loss = tf.keras.losses.CategoricalCrossentropy()(c, c_hat) + tf.keras.losses.mse(a, a_hat)
         return loss
 
     def calc_generator_loss(self, fake_result):
@@ -164,31 +161,33 @@ class infoGAN_digits():
         loss = real_loss + fake_loss
         return loss
 
+    def discrimate(self, data):
+        discriminator_intermident = self.discriminator_base(data)
+        discrimination = self.discriminator(discriminator_intermident, training=True)
+        analog, classify = self.quaility_control(discriminator_intermident, training=True)
+        return discrimination, analog, classify
+
     def train_step(self, image, batch_size):
         with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
             z, ctn, cat = self.generator_input(batch_size)
             generator_images = gan.generator([z, ctn, cat], training=True)
-            discriminator_fake, Q_input = self.discriminator(generator_images, training=True)
-            discriminator_real, _ = self.discriminator(image, training=True)
-            c_hat = self.Q(Q_input)
-            info_loss = self.calc_info_loss(cat, c_hat)
-            generator_loss = self.calc_generator_loss(discriminator_fake)
-            discriminator_loss = self.calc_discriminator_loss(
-                discriminator_real, discriminator_fake)
+
+            dis_fake, qc_analog, qc_classify = self.discrimate(generator_images)
+            dis_real, _, _ = self.discrimate(image)
+
+            info_loss = self.calc_info_loss(cat, qc_classify, ctn, qc_analog)
+            generator_loss = self.calc_generator_loss(dis_fake)
+            discriminator_loss = self.calc_discriminator_loss(dis_real, dis_fake)
 
             generator_infoGAN_loss = info_loss + generator_loss
             discriminator_infoGAN_loss = info_loss + discriminator_loss
 
-        generator_gradient = generator_tape.gradient(generator_infoGAN_loss,
-                                                     self.generator.trainable_variables + self.Q.trainable_variables)
-        discriminator_gradient = discriminator_tape.gradient(discriminator_infoGAN_loss,
-                                                             self.discriminator.trainable_variables)
+        generator_gradient = generator_tape.gradient(generator_infoGAN_loss, self.generator.trainable_variables + self.discriminator_base.trainable_variables + self.quaility_control.trainable_variables)
+        discriminator_gradient = discriminator_tape.gradient(discriminator_infoGAN_loss, self.discriminator_base.trainable_variables + self.discriminator.trainable_variables)
 
-        self.generator_optimizer.apply_gradients(
-            zip(generator_gradient, self.generator.trainable_variables + self.Q.trainable_variables))
-        self.discriminator_optimizer.apply_gradients(
-            zip(discriminator_gradient, self.discriminator.trainable_variables))
-        return info_loss, generator_loss, discriminator_loss
+        self.generator_optimizer.apply_gradients(zip(generator_gradient, self.generator.trainable_variables + self.discriminator_base.trainable_variables + self.quaility_control.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(zip(discriminator_gradient, self.discriminator_base.trainable_variables + self.discriminator.trainable_variables))
+        return np.mean(info_loss), np.mean(generator_loss), np.mean(discriminator_loss)
 
     def process_dataset(self):
         train, test = tf.keras.datasets.mnist.load_data()
@@ -209,12 +208,10 @@ class infoGAN_digits():
         for epoch in range(0, epochs):
             for batch_cnt, batch_images in enumerate(batch_dataset):
                 train_cycle += 1
-                info_loss, generator_loss, discriminator_loss = self.train_step(
-                    batch_images, batch_size)
+                info_loss, generator_loss, discriminator_loss = self.train_step(batch_images, batch_size)
                 d_loss_log.append(discriminator_loss)
                 g_loss_log.append(generator_loss)
-                status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (
-                    epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
+                status = "[epoch:%d/%d batch:%d/%d]info_loss=%.5f,generator_loss=%.5f,discriminator_loss=%.5f" % (epoch + 1, epochs, batch_cnt + 1, batch_len, info_loss, generator_loss, discriminator_loss)
                 self._overwrite_print(status)
                 now_monotonic_time = time.monotonic()
                 if now_monotonic_time > next_report_time:
@@ -344,7 +341,7 @@ class infoGAN_digits():
 
 
 if __name__ == "__main__":
-    gan = infoGAN_digits()
+    gan = infoGAN_digits(64, 1, 10, 1000)
     gan.load_model()
     dataset = gan.process_dataset()
     gan.train(dataset, batch_size=64, epochs=100)
