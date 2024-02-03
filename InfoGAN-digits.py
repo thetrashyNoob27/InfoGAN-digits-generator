@@ -62,11 +62,7 @@ class infoGAN_digits():
 
             def call(self, x, training=True):
                 for layer in self._layers:
-                    if isinstance(x, tf.keras.layers.BatchNormalization):
-                        x = layer(x, training=training)
-                    else:
-                        x = layer(x)
-
+                    x = layer(x, training=training)
                 return x
 
         g = Generator()
@@ -77,38 +73,33 @@ class infoGAN_digits():
             def __init__(self):
                 super(Discriminator, self).__init__()
 
-                self.c1 = tf.keras.layers.Conv2D(
-                    64, (4, 4), strides=(2, 2), padding="same")
-                self.a1 = tf.keras.layers.LeakyReLU()
+                self.common_layers = []
 
-                self.c2 = tf.keras.layers.Conv2D(
-                    128, (4, 4), strides=(2, 2), padding="same")
-                self.a2 = tf.keras.layers.LeakyReLU()
-                self.b2 = tf.keras.layers.BatchNormalization()
-                self.f2 = tf.keras.layers.Flatten()
+                self.common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same"))
+                self.common_layers.append(tf.keras.layers.BatchNormalization())
+                self.common_layers.append(tf.keras.layers.LeakyReLU())
 
-                self.d3 = tf.keras.layers.Dense(1024)
-                self.a3 = tf.keras.layers.LeakyReLU()
-                self.b3 = tf.keras.layers.BatchNormalization()
+                self.common_layers.append(tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same"))
+                self.common_layers.append(tf.keras.layers.BatchNormalization())
+                self.common_layers.append(tf.keras.layers.LeakyReLU())
 
-                self.D = tf.keras.layers.Dense(1)
+                self.common_layers.append(tf.keras.layers.Flatten())
+
+                self.common_layers.append(tf.keras.layers.Dense(1024))
+                self.common_layers.append(tf.keras.layers.BatchNormalization())
+                self.common_layers.append(tf.keras.layers.LeakyReLU())
+
+                self.d_layers = []
+                self.d_layers.append(tf.keras.layers.Dense(1))
 
             def call(self, x, training=True):
-                x = self.c1(x)
-                x = self.a1(x)
-
-                x = self.c2(x)
-                x = self.b2(x, training=training)
-                x = self.a2(x)
-                x = self.f2(x)
-
-                x = self.d3(x)
-                x = self.b3(x, training=training)
-                x = self.a3(x)
-
+                for layer in self.common_layers:
+                    x = layer(x, training=training)
                 mid = x
 
-                D = self.D(x)
+                D = x
+                for layer in self.d_layers:
+                    D = layer(D)
 
                 return D, mid
 
@@ -121,29 +112,25 @@ class infoGAN_digits():
                 super(QNet, self).__init__()
 
                 # base model part
-                self.base_layer = [None for i in range(0, 3)]
+                self.base_layer = []
 
-                self.base_layer[0] = tf.keras.layers.Dense(128)
-                self.base_layer[1] = tf.keras.layers.BatchNormalization()
-                self.base_layer[2] = tf.keras.layers.LeakyReLU()
+                self.base_layer.append(tf.keras.layers.Dense(128))
+                self.base_layer.append(tf.keras.layers.BatchNormalization())
+                self.base_layer.append(tf.keras.layers.LeakyReLU())
 
                 # c_hat_layer
-                self.c_hat_branch = [None for i in range(0, 1)]
-                self.c_hat_branch[0] = tf.keras.layers.Dense(10)
+                self.c_hat_branch = []
+                self.c_hat_branch.append(tf.keras.layers.Dense(10))
 
                 # z_hat_layer
-                # self.z_hat_layer_mu=tf.keras.layers.Dense(2)
-                # self.z_hat_layer_var=tf.keras.layers.Dense(2)
 
             def call(self, x, training=True):
-                idx = 0
-                x = self.base_layer[idx](x)
-                idx += 1
-                x = self.base_layer[idx](x, training=training)
-                idx += 1
-                x = self.base_layer[idx](x)
-                del idx
-                c_hat = self.c_hat_branch[0](x)
+                for layer in self.base_layer:
+                    x = layer(x)
+
+                c_hat = x
+                for layer in self.c_hat_branch:
+                    c_hat = layer(x)
                 return c_hat
 
         q = QNet()
