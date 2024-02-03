@@ -24,26 +24,30 @@ def build_generator(latent_dim, num_continuous, num_categories):
     gen = x
 
     gen = tf.keras.layers.Dense(1000)(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+
     gen = tf.keras.layers.Dropout(0.05)(gen)
 
     n_nodes = 512 * 7 * 7
     gen = tf.keras.layers.Dense(n_nodes)(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
+
     gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # normal
     gen = tf.keras.layers.Conv2D(512, (4, 4), padding='same')(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
+
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 14x14
     gen = tf.keras.layers.Conv2DTranspose(256, (4, 4), strides=(
         2, 2), padding='same')(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
+
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 28x28
     gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(
@@ -68,6 +72,10 @@ def build_discriminator(num_continuous, num_categories):
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # normal
+    d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
+    d = tf.keras.layers.BatchNormalization()(d)
+    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+
     d = tf.keras.layers.Conv2D(64, (4, 4), padding='same')(d)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
@@ -210,7 +218,7 @@ if __name__ == "__main__":
             real_predict, _, _ = discriminator.predict(real_images, verbose=0)
             fake_predict, _, _ = discriminator.predict(generated_images, verbose=0)
             generator_score = np.mean(fake_predict)
-            discriminator_score = np.mean([np.mean(real_predict), 1 -    generator_score])
+            discriminator_score = np.mean([np.mean(real_predict), 1 - generator_score])
             g_score_log.append(generator_score)
             d_score_log.append(discriminator_score)
 
