@@ -205,7 +205,8 @@ if __name__ == "__main__":
                 fake = np.zeros((batch_size, 1))
 
                 # loss
-                quility_loss = tf.keras.losses.mse(sampled_continuous, quility_control_continue) + tf.keras.losses.CategoricalCrossentropy(from_logits=True)(sampled_categories_one_hot, quility_control_classify)
+                quility_loss = tf.reduce_mean(tf.keras.losses.mse(sampled_continuous, quility_control_continue))
+                quility_loss += tf.keras.losses.CategoricalCrossentropy(from_logits=True)(sampled_categories_one_hot, quility_control_classify)
                 generator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_fake)
                 discriminator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(fake, discriminator_fake) + tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_real)
 
@@ -269,7 +270,7 @@ if __name__ == "__main__":
                         _plot_idx = 1
                         ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
                         ax[_plot_idx].plot(_x, g_score_log, label="generator score")
-                        ax[_plot_idx].set_ylim(0, 1)
+                        ax[_plot_idx].set_ylim(-0.1, 1.1)
                         ax[_plot_idx].set_xlabel("epoch/tick")
                         ax[_plot_idx].set_ylabel('score')
                         ax[_plot_idx].set_title('D-G score')
