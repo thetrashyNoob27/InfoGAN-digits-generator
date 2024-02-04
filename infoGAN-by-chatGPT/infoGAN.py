@@ -75,7 +75,7 @@ def build_discriminator_base(datashape, intermident_units):
 
 def build_discriminator(intermident_units):
     mid = tf.keras.layers.Input(shape=(intermident_units,))
-    validity = tf.keras.layers.Dense(1, activation='sigmoid', name="real_fake_discrimination")(mid)
+    validity = tf.keras.layers.Dense(1, name="real_fake_discrimination")(mid)
     discrimator_model = tf.keras.Model(inputs=mid, outputs=validity)
     return discrimator_model
 
@@ -87,9 +87,9 @@ def build_quality_control(intermident_units, num_continuous, num_categories):
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
     continuous_output = tf.keras.layers.Dense(
-        num_continuous, activation='linear', name="Q_linear")(x)
+        num_continuous, name="Q_linear")(x)
     category_output = tf.keras.layers.Dense(
-        num_categories, activation='softmax', name="Q_classify")(x)
+        num_categories, name="Q_classify")(x)
 
     quility_control_model = tf.keras.Model(inputs=mid, outputs=[continuous_output, category_output])
     return quility_control_model
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         os.nice(19)
     # Dimensions
     latent_dim = 62
-    num_continuous = 2
+    num_continuous = 1
     num_categories = 10
     num_mid_features = 1000
 
@@ -199,23 +199,23 @@ if __name__ == "__main__":
                 discriminator_fake = discriminator(mid_fake, training=True)
                 mid_real = discriminator_base(real_images, training=True)
                 discriminator_real = discriminator(mid_real, training=True)
-                quility_control_continue, quility_control_classify = quility_control(mid_fake, training=True)
+                quility_control_continue, quility_control_classify = quility_control(mid_fake)
 
                 valid = np.ones((batch_size, 1))
                 fake = np.zeros((batch_size, 1))
 
                 # loss
-                quility_loss = tf.keras.losses.mse(sampled_continuous, quility_control_continue) + tf.keras.losses.CategoricalCrossentropy()(sampled_categories_one_hot, quility_control_classify)
-                generator_loss = tf.keras.losses.BinaryCrossentropy()(valid, discriminator_fake)
-                discriminator_loss = tf.keras.losses.BinaryCrossentropy()(fake, discriminator_fake) + tf.keras.losses.BinaryCrossentropy()(valid, discriminator_real)
+                quility_loss = tf.keras.losses.mse(sampled_continuous, quility_control_continue) + tf.keras.losses.CategoricalCrossentropy(from_logits=True)(sampled_categories_one_hot, quility_control_classify)
+                generator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_fake)
+                discriminator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(fake, discriminator_fake) + tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_real)
 
                 info_g_loss = quility_loss + generator_loss
                 info_d_loss = quility_loss + discriminator_loss
 
-                generator_gradient = generator_tape.gradient(info_g_loss, generator.trainable_variables + quility_control.trainable_variables + discriminator_base.trainable_variables)
+                generator_gradient = generator_tape.gradient(info_g_loss, generator.trainable_variables + quility_control.trainable_variables)
                 discriminator_gradient = discriminator_tape.gradient(info_d_loss, discriminator.trainable_variables + discriminator_base.trainable_variables)
 
-                discriminator_optmizer.apply_gradients(zip(generator_gradient, generator.trainable_variables + quility_control.trainable_variables + discriminator_base.trainable_variables))
+                discriminator_optmizer.apply_gradients(zip(generator_gradient, generator.trainable_variables + quility_control.trainable_variables))
                 generator_optmizer.apply_gradients(zip(discriminator_gradient, discriminator.trainable_variables + discriminator_base.trainable_variables))
 
                 generator_score = np.mean(discriminator_fake)
