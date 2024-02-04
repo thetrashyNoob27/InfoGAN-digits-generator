@@ -43,18 +43,19 @@ class infoGAN_digits():
     def _generator_internals(self, x):
         _layers = []
         _layers.append(tf.keras.layers.Dense(1024, use_bias=False))
-        _layers.append(tf.keras.layers.ReLU())
         _layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.ReLU())
 
         _layers.append(tf.keras.layers.Dense(7 * 7 * 128, use_bias=False))
-        _layers.append(tf.keras.layers.ReLU())
         _layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.ReLU())
 
         _layers.append(tf.keras.layers.Reshape([7, 7, 128]))
 
         _layers.append(tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding="same"))
-        _layers.append(tf.keras.layers.ReLU())
         _layers.append(tf.keras.layers.BatchNormalization())
+        _layers.append(tf.keras.layers.ReLU())
+
 
         _layers.append(tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding="same"))
 
