@@ -56,7 +56,6 @@ class infoGAN_digits():
         _layers.append(tf.keras.layers.BatchNormalization())
         _layers.append(tf.keras.layers.ReLU())
 
-
         _layers.append(tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding="same"))
 
         _layers.append(tf.keras.layers.Activation('tanh'))
@@ -77,9 +76,8 @@ class infoGAN_digits():
 
     def _discriminator_base_internals(self, x):
         common_layers = []
-        _layer_prefix = "discriminator_base_internals"
 
-        common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same", name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_"))
+        common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same"))
         common_layers.append(tf.keras.layers.BatchNormalization())
         common_layers.append(tf.keras.layers.LeakyReLU())
 
@@ -113,7 +111,7 @@ class infoGAN_digits():
     def _model_quality_control_internals(self, x):
         _layer_prefix = "model_quality_control_internals"
         qc_layers = []
-        qc_layers.append(tf.keras.layers.Dense(128, name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_"))
+        qc_layers.append(tf.keras.layers.Dense(128) )
         qc_layers.append(tf.keras.layers.BatchNormalization())
         qc_layers.append(tf.keras.layers.LeakyReLU())
         for l in qc_layers:
@@ -124,7 +122,7 @@ class infoGAN_digits():
         base_output = tf.keras.layers.Input(shape=(mid_feautures,))
         x = self._model_quality_control_internals(base_output)
 
-        continue_ = tf.keras.layers.Dense(continuous, activation='linear')(x)
+        continue_ = tf.keras.layers.Dense(continuous)(x)
         classify = tf.keras.layers.Dense(categorys)(x)
 
         qc_model = tf.keras.Model(inputs=base_output, outputs=[continue_, classify])
@@ -156,9 +154,9 @@ class infoGAN_digits():
         loss = real_loss + fake_loss
         return loss
 
-    def discrimate(self, data,train):
+    def discrimate(self, data, train):
         mid, discrimination = self.discriminator(data, training=train)
-        analog, classify = self.quaility_control(mid, training=train)
+        analog, classify = self.quaility_control(mid)
         return discrimination, analog, classify
 
     def train_step(self, image, batch_size):
@@ -166,8 +164,8 @@ class infoGAN_digits():
             z, ctn, cat = self.generator_input(batch_size)
             generator_images = gan.generator([z, ctn, cat], training=True)
 
-            dis_fake, qc_analog, qc_classify = self.discrimate(generator_images,train=True)
-            dis_real, _, _ = self.discrimate(image,train=True)
+            dis_fake, qc_analog, qc_classify = self.discrimate(generator_images, train=True)
+            dis_real, _, _ = self.discrimate(image, train=True)
 
             info_loss = self.calc_info_loss(cat, qc_classify, ctn, qc_analog)
             generator_loss = self.calc_generator_loss(dis_fake)
@@ -337,7 +335,7 @@ class infoGAN_digits():
 if __name__ == "__main__":
     if platform.system() == "Linux":
         os.nice(19)
-    gan = infoGAN_digits(64, 0, 10, 1000)
+    gan = infoGAN_digits(70, 0, 10, 1000)
     gan.load_model()
     dataset = gan.process_dataset()
     gan.train(dataset, batch_size=64, epochs=100)
