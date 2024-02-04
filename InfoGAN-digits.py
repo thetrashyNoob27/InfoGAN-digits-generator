@@ -21,7 +21,7 @@ class infoGAN_digits():
         self.generator = self._model_generator(noise_dim, continuous_dim, categories_dim)
         # self.discriminator_base = self._model_discriminator_base(mid_feautures)
         self.discriminator = self._model_discriminator(mid_feautures)
-        self.quaility_control = self._model_quality_control(mid_feautures, continuous_dim, categories_dim)
+        self.quaility_control = self._model_quality_control(continuous_dim, categories_dim)
 
         self.generator_optimizer = tf.keras.optimizers.Adam(1e-3)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-4)
@@ -40,7 +40,7 @@ class infoGAN_digits():
             os.mkdir(self.checkpoint_path)
         return
 
-    def _generator_internals(self, x):
+    def _generator_internals(self):
         _layers = []
         _layers.append(tf.keras.layers.Dense(1024, use_bias=False))
         _layers.append(tf.keras.layers.BatchNormalization())
@@ -60,21 +60,30 @@ class infoGAN_digits():
 
         _layers.append(tf.keras.layers.Activation('tanh'))
 
-        for l in _layers:
-            x = l(x)
-        return x
+        return _layers
 
     def _model_generator(self, noise_dim, continuous_dim, categories_dim):
-        noise = tf.keras.layers.Input(shape=(noise_dim,))
-        continuous = tf.keras.layers.Input(shape=(continuous_dim,))
-        category = tf.keras.layers.Input(shape=(categories_dim,))
-        input_layer = tf.keras.layers.Concatenate()([noise, continuous, category])
-        gen = self._generator_internals(input_layer)
+        class _model(tf.keras.Model):
+            def __init__(self, **kwargs):
+                super(_model, self).__init__(**kwargs)
+                self.input_layer = tf.keras.layers.Concatenate()
+                return
 
-        gen_model = tf.keras.Model(inputs=[noise, continuous, category], outputs=gen)
-        return gen_model
+            def set_internal_layers(self, _layers):
+                self.internal_layers = _layers
+                return
 
-    def _discriminator_base_internals(self, x):
+            def call(self, inputs, training=True, **kwargs):
+                x = self.input_layer(inputs)
+                for layer in self.internal_layers:
+                    x = layer(x, training=training)
+                return x
+
+        gan_model = _model(name="g_model")
+        gan_model.set_internal_layers(self._generator_internals())
+        return gan_model
+
+    def _discriminator_base_internals(self):
         common_layers = []
 
         common_layers.append(tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same"))
@@ -91,42 +100,63 @@ class infoGAN_digits():
         common_layers.append(tf.keras.layers.BatchNormalization())
         common_layers.append(tf.keras.layers.LeakyReLU())
 
-        for l in common_layers:
-            x = l(x)
-        return x
+        return common_layers
 
     def _model_discriminator(self, mid_feautures):
-        _layer_prefix = "model_discriminator_base"
-        input_shape = self.generator.layers[-1].output_shape[1:]
-        generator_output = tf.keras.layers.Input(shape=input_shape, name=_layer_prefix + str(inspect.currentframe().f_lineno) + "_")
-        mid = self._discriminator_base_internals(generator_output)
-        mid = tf.keras.layers.Dense(mid_feautures)(mid)
+        class _model(tf.keras.Model):
+            def __init__(self, mid_feautures, **kwargs):
+                super(_model, self).__init__(**kwargs)
+                self.discrim = tf.keras.layers.Dense(1)
+                self.mid_feautures = mid_feautures
+                self.mid_layer = tf.keras.layers.Dense(mid_feautures)
+                return
 
-        discrim = tf.keras.layers.Dense(1)(mid)
+            def set_internal_layers(self, _layers):
+                self.internal_layers = _layers
+                return
 
-        discriminator_base_model = tf.keras.Model(inputs=generator_output, outputs=[mid, discrim])
+            def call(self, inputs, training=True, **kwargs):
+                x = inputs
+                for layer in self.internal_layers:
+                    x = layer(x, training=training)
+                mid = self.mid_layer(x, training=training)
+                discrim = self.discrim(x)
+                return mid, discrim
 
-        return discriminator_base_model
+        model = _model(mid_feautures, name="d_model")
+        model.set_internal_layers(self._discriminator_base_internals())
+        return model
 
-    def _model_quality_control_internals(self, x):
-        _layer_prefix = "model_quality_control_internals"
+    def _model_quality_control_internals(self):
         qc_layers = []
-        qc_layers.append(tf.keras.layers.Dense(128) )
+        qc_layers.append(tf.keras.layers.Dense(128))
         qc_layers.append(tf.keras.layers.BatchNormalization())
         qc_layers.append(tf.keras.layers.LeakyReLU())
-        for l in qc_layers:
-            x = l(x)
-        return x
+        return qc_layers
 
-    def _model_quality_control(self, mid_feautures, continuous, categorys):
-        base_output = tf.keras.layers.Input(shape=(mid_feautures,))
-        x = self._model_quality_control_internals(base_output)
+    def _model_quality_control(self, continuous, categorys):
+        class _model(tf.keras.Model):
+            def __init__(self, continuous, categorys, **kwargs):
+                super(_model, self).__init__(**kwargs)
+                self.continuous_layer = tf.keras.layers.Dense(continuous)
+                self.category_layer = tf.keras.layers.Dense(categorys)
+                return
 
-        continue_ = tf.keras.layers.Dense(continuous)(x)
-        classify = tf.keras.layers.Dense(categorys)(x)
+            def set_internal_layers(self, _layers):
+                self.internal_layers = _layers
+                return
 
-        qc_model = tf.keras.Model(inputs=base_output, outputs=[continue_, classify])
-        return qc_model
+            def call(self, inputs, training=None, **kwargs):
+                x = inputs
+                for layer in self.internal_layers:
+                    x = layer(x)
+                cat = self.category_layer(x)
+                ctn = self.continuous_layer(x)
+                return ctn, cat
+
+        model = _model(continuous, categorys, name="qc_model")
+        model.set_internal_layers(self._model_quality_control_internals())
+        return model
 
     def generator_input(self, batch, digit_value=None):
         noise = np.random.uniform(-1, 1, (batch, self.noise_dim))
@@ -139,7 +169,8 @@ class infoGAN_digits():
         return noise, continuous, category
 
     def calc_info_loss(self, c, c_hat, a, a_hat):
-        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(c, c_hat) + tf.keras.losses.mse(a, a_hat)
+        loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(c, c_hat)
+        loss += tf.keras.losses.mse(a, a_hat)
         return loss
 
     def calc_generator_loss(self, fake_result):
