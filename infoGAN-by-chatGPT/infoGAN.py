@@ -24,24 +24,24 @@ def build_generator(latent_dim, num_continuous, num_categories):
     gen = x
 
     gen = tf.keras.layers.Dense(1024)(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
 
     n_nodes = 512 * 7 * 7
     gen = tf.keras.layers.Dense(n_nodes)(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
     gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # normal
     gen = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 14x14
     gen = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding='same')(gen)
-    gen = tf.keras.layers.Activation('relu')(gen)
     gen = tf.keras.layers.BatchNormalization()(gen)
+    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
     gen = tf.keras.layers.Dropout(0.05)(gen)
     # upsample to 28x28
     gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding='same')(gen)
@@ -54,7 +54,7 @@ def build_generator(latent_dim, num_continuous, num_categories):
 def build_discriminator_base(datashape, intermident_units):
     image_input = tf.keras.layers.Input(shape=datashape)
     # downsample to 14x14
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(image_input)
+    d = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding='same')(image_input)
     d = tf.keras.layers.BatchNormalization()(d)
     d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
     # downsample to 7x7
@@ -168,14 +168,14 @@ if __name__ == "__main__":
 
     # Training loop
     REPORT_PERIOD_SEC = 60
-    next_report_time = time.monotonic() + 30
+    next_report_time = time.monotonic() + REPORT_PERIOD_SEC
     d_loss_log = []
     g_loss_log = []
     d_score_log = []
     g_score_log = []
     trainCnt = 0
-    discriminator_optmizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-    generator_optmizer = tf.keras.optimizers.Adam(learning_rate=2e-4)
+    discriminator_optmizer = tf.keras.optimizers.Adam()
+    generator_optmizer = tf.keras.optimizers.Adam()
     for epoch in range(epochs):
         indices = np.arange(0, x_train.shape[0])
         np.random.shuffle(indices)
@@ -186,11 +186,13 @@ if __name__ == "__main__":
             trainCnt += 1
 
             real_images = b
-            noise = np.random.normal(0, 1, (batch_size, latent_dim))
-            sampled_categories = np.random.randint(0, num_categories, batch_size)
+            real_batch_size = real_images.shape[0]
+            noise = np.random.normal(0, 1, (real_batch_size, latent_dim))
+            sampled_categories = np.random.randint(0, num_categories, real_batch_size)
             sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
             del sampled_categories
-            sampled_continuous = np.random.uniform(-1, 1, (batch_size, num_continuous))
+            # sampled_continuous = np.random.uniform(-1, 1, (real_batch_size, num_continuous))
+            sampled_continuous = np.zeros((real_batch_size, num_continuous))
 
             with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
                 generated_images = generator([noise, sampled_continuous, sampled_categories_one_hot], training=True)
@@ -199,14 +201,14 @@ if __name__ == "__main__":
                 discriminator_fake = discriminator(mid_fake, training=True)
                 mid_real = discriminator_base(real_images, training=True)
                 discriminator_real = discriminator(mid_real, training=True)
-                quility_control_continue, quility_control_classify = quility_control(mid_fake)
+                quility_control_continue, quility_control_classify = quility_control(mid_fake, training=True)
 
-                valid = np.ones((batch_size, 1))
-                fake = np.zeros((batch_size, 1))
+                valid = np.ones((real_batch_size, 1))
+                fake = np.zeros((real_batch_size, 1))
 
                 # loss
-                quility_loss = tf.reduce_mean(tf.keras.losses.mse(sampled_continuous, quility_control_continue))
-                quility_loss += tf.keras.losses.CategoricalCrossentropy(from_logits=True)(sampled_categories_one_hot, quility_control_classify)
+                # quility_loss = tf.reduce_mean(tf.keras.losses.mse(sampled_continuous, quility_control_continue))
+                quility_loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(sampled_categories_one_hot, quility_control_classify)
                 generator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_fake)
                 discriminator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True)(fake, discriminator_fake) + tf.keras.losses.BinaryCrossentropy(from_logits=True)(valid, discriminator_real)
 
@@ -259,8 +261,8 @@ if __name__ == "__main__":
                         fig, ax = plt.subplots(2, 1, dpi=300, figsize=(16, 9))
                         _x = [i for i in range(0, epoch)]
                         _plot_idx = 0
-                        ax[_plot_idx].plot(_x, d_loss_log, label="discriminator loss")
-                        ax[_plot_idx].plot(_x, g_loss_log, label="generator loss")
+                        ax[_plot_idx].plot(_x, d_loss_log, label="discriminator loss", color='r')
+                        ax[_plot_idx].plot(_x, g_loss_log, label="generator loss", color='b')
                         ax[_plot_idx].set_xlabel("epoch/tick")
                         ax[_plot_idx].set_ylabel('loss')
                         ax[_plot_idx].set_title('D-G loss')
@@ -268,9 +270,9 @@ if __name__ == "__main__":
                         ax[_plot_idx].grid(True)
 
                         _plot_idx = 1
-                        ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
-                        ax[_plot_idx].plot(_x, g_score_log, label="generator score")
-                        ax[_plot_idx].set_ylim(-0.1, 1.1)
+                        ax[_plot_idx].plot(_x, d_score_log, label="discriminator score", color='r')
+                        ax[_plot_idx].plot(_x, g_score_log, label="generator score", color='b')
+                        # ax[_plot_idx].set_ylim(-0.1, 1.1)
                         ax[_plot_idx].set_xlabel("epoch/tick")
                         ax[_plot_idx].set_ylabel('score')
                         ax[_plot_idx].set_title('D-G score')
