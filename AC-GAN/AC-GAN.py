@@ -14,13 +14,12 @@ np.random.seed(16)
 tf.random.set_seed(16)
 
 
-def build_generator(latent_dim, num_continuous, num_categories):
+def build_generator(latent_dim, num_categories):
     noise = tf.keras.layers.Input(shape=(latent_dim,))
-    continuous_input = tf.keras.layers.Input(shape=(num_continuous,))
     category_input = tf.keras.layers.Input(shape=(num_categories,))
 
     x = tf.keras.layers.Concatenate()(
-        [noise, continuous_input, category_input])
+        [noise, category_input])
     gen = x
 
     gen = tf.keras.layers.Dense(1024)(gen)
@@ -48,7 +47,7 @@ def build_generator(latent_dim, num_continuous, num_categories):
     # tanh output
     generated_image = tf.keras.layers.Activation('tanh', name="generator_output")(gen)
 
-    return tf.keras.Model(inputs=[noise, continuous_input, category_input], outputs=generated_image)
+    return tf.keras.Model(inputs=[noise, category_input], outputs=generated_image)
 
 
 def build_discriminator_base(datashape, intermident_units):
@@ -80,18 +79,16 @@ def build_discriminator(intermident_units):
     return discrimator_model
 
 
-def build_quality_control(intermident_units, num_continuous, num_categories):
+def build_quality_control(intermident_units, num_categories):
     mid = tf.keras.layers.Input(shape=(intermident_units,))
     x = mid
     x = tf.keras.layers.Dense(23)(x)
     x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.1)(x)
-    continuous_output = tf.keras.layers.Dense(
-        num_continuous, activation="linear", name="Q_linear")(x)
     category_output = tf.keras.layers.Dense(
         num_categories, activation="softmax", name="Q_classify")(x)
 
-    quility_control_model = tf.keras.Model(inputs=mid, outputs=[continuous_output, category_output])
+    quility_control_model = tf.keras.Model(inputs=mid, outputs=category_output)
     return quility_control_model
 
 
@@ -133,22 +130,13 @@ if __name__ == "__main__":
         os.nice(19)
     # Dimensions
     latent_dim = 62
-    num_continuous = 1
     num_categories = 10
     num_mid_features = 1000
 
-    # Build and compile the generator, discriminator, and InfoGAN models
-    try:
-        generator = tf.keras.models.load_model("infoGAN-model-G.tf")
-        discriminator = tf.keras.models.load_model("infoGAN-model-D.tf")
-        quility_control = tf.keras.models.load_model("infoGAN-model-Q.tf")
-        print("load model success")
-    except OSError as e:
-        generator = build_generator(latent_dim, num_continuous, num_categories)
-
-        discriminator_base = build_discriminator_base((28, 28, 1), num_mid_features)
-        discriminator = build_discriminator(num_mid_features)
-        quility_control = build_quality_control(num_mid_features, num_continuous, num_categories)
+    generator = build_generator(latent_dim, num_categories)
+    discriminator_base = build_discriminator_base((28, 28, 1), num_mid_features)
+    discriminator = build_discriminator(num_mid_features)
+    quility_control = build_quality_control(num_mid_features, num_categories)
 
     # prepare dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
@@ -181,34 +169,38 @@ if __name__ == "__main__":
         np.random.shuffle(indices)
         x_train = x_train[indices]
         y = y[indices]
-        batchs = np.array_split(x_train, np.ceil(x_train.shape[0] / batch_size))
-        for b in batchs:
+        x_batchs = np.array_split(x_train, np.ceil(x_train.shape[0] / batch_size))
+        y_batchs = np.array_split(y, np.ceil(x_train.shape[0] / batch_size))
+        batch_cnt = len(y_batchs)
+        for idx in range(0, batch_cnt):
             trainCnt += 1
 
-            real_images = b
+            real_images = x_batchs[idx]
+            real_label = y_batchs[idx]
+            real_label_oneHot = tf.keras.utils.to_categorical(real_label, num_categories)
+
             real_batch_size = real_images.shape[0]
+
             noise = np.random.normal(0, 1, (real_batch_size, latent_dim))
             sampled_categories = np.random.randint(0, num_categories, real_batch_size)
             sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
             del sampled_categories
-            # sampled_continuous = np.random.uniform(-1, 1, (real_batch_size, num_continuous))
-            sampled_continuous = np.zeros((real_batch_size, num_continuous))
 
             with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
-                generated_images = generator([noise, sampled_continuous, sampled_categories_one_hot], training=True)
+                generated_images = generator([noise, sampled_categories_one_hot], training=True)
 
                 mid_fake = discriminator_base(generated_images, training=True)
                 discriminator_fake = discriminator(mid_fake, training=True)
                 mid_real = discriminator_base(real_images, training=True)
                 discriminator_real = discriminator(mid_real, training=True)
-                quility_control_continue, quility_control_classify = quility_control(mid_fake, training=True)
+                quility_control_fake = quility_control(mid_fake, training=True)
+                quility_control_real = quility_control(mid_real, training=True)
 
                 valid = np.ones((real_batch_size, 1))
                 fake = np.zeros((real_batch_size, 1))
 
                 # loss
-                # quility_loss = tf.reduce_mean(tf.keras.losses.mse(sampled_continuous, quility_control_continue))
-                quility_loss = tf.keras.losses.CategoricalCrossentropy(from_logits=False)(sampled_categories_one_hot, quility_control_classify)
+                quility_loss = tf.keras.losses.CategoricalCrossentropy(from_logits=False)(sampled_categories_one_hot, quility_control_fake) + tf.keras.losses.CategoricalCrossentropy(from_logits=False)(real_label_oneHot, quility_control_real)
                 generator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)(valid, discriminator_fake)
                 discriminator_loss = tf.keras.losses.BinaryCrossentropy(from_logits=False)(fake, discriminator_fake) + tf.keras.losses.BinaryCrossentropy(from_logits=False)(valid, discriminator_real)
 
@@ -250,9 +242,7 @@ if __name__ == "__main__":
                     sampled_categories = cat_array
                     del cat_array
 
-                    sampled_continuous = np.random.uniform(-1, 1, (100, num_continuous))
-
-                    generated_images = generator.predict([noise, sampled_continuous, sampled_categories], verbose=0)
+                    generated_images = generator.predict([noise, sampled_categories], verbose=0)
 
 
                     # print(generated_images.shape)#(100, 28, 28, 1)

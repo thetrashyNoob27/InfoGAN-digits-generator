@@ -13,15 +13,14 @@ import inspect
 
 
 class infoGAN_digits():
-    def __init__(self, noise_dim, continuous_dim, categories_dim, mid_feautures):
+    def __init__(self, noise_dim, categories_dim, mid_feautures):
         self.noise_dim = noise_dim
-        self.continuous_dim = continuous_dim
         self.categories_dim = categories_dim
         self.mid_feautures = mid_feautures
-        self.generator = self._model_generator(noise_dim, continuous_dim, categories_dim)
+        self.generator = self._model_generator(noise_dim, categories_dim)
         # self.discriminator_base = self._model_discriminator_base(mid_feautures)
         self.discriminator = self._model_discriminator(mid_feautures)
-        self.quaility_control = self._model_quality_control(continuous_dim, categories_dim)
+        self.quaility_control = self._model_quality_control(categories_dim)
 
         self.generator_optimizer = tf.keras.optimizers.Adam(1e-3)
         self.discriminator_optimizer = tf.keras.optimizers.Adam(2e-4)
@@ -62,7 +61,7 @@ class infoGAN_digits():
 
         return _layers
 
-    def _model_generator(self, noise_dim, continuous_dim, categories_dim):
+    def _model_generator(self, noise_dim, categories_dim):
         class _model(tf.keras.Model):
             def __init__(self, **kwargs):
                 super(_model, self).__init__(**kwargs)
@@ -134,11 +133,10 @@ class infoGAN_digits():
         qc_layers.append(tf.keras.layers.LeakyReLU())
         return qc_layers
 
-    def _model_quality_control(self, continuous, categorys):
+    def _model_quality_control(self, categorys):
         class _model(tf.keras.Model):
-            def __init__(self, continuous, categorys, **kwargs):
+            def __init__(self, categorys, **kwargs):
                 super(_model, self).__init__(**kwargs)
-                self.continuous_layer = tf.keras.layers.Dense(continuous)
                 self.category_layer = tf.keras.layers.Dense(categorys)
                 return
 
@@ -151,26 +149,23 @@ class infoGAN_digits():
                 for layer in self.internal_layers:
                     x = layer(x)
                 cat = self.category_layer(x)
-                ctn = self.continuous_layer(x)
-                return ctn, cat
+                return cat
 
-        model = _model(continuous, categorys, name="qc_model")
+        model = _model(categorys, name="qc_model")
         model.set_internal_layers(self._model_quality_control_internals())
         return model
 
     def generator_input(self, batch, digit_value=None):
         noise = np.random.uniform(-1, 1, (batch, self.noise_dim))
-        continuous = np.random.uniform(-1, 1, (batch, self.continuous_dim))
         if digit_value is None:
             sampled_categories = np.random.randint(0, self.categories_dim, (batch, 1))
         else:
             sampled_categories = np.full((batch, 1), digit_value)
         category = tf.keras.utils.to_categorical(sampled_categories, self.categories_dim)
-        return noise, continuous, category
+        return noise, category
 
-    def calc_info_loss(self, c, c_hat, a, a_hat):
+    def calc_info_loss(self, c, c_hat):
         loss = tf.keras.losses.CategoricalCrossentropy(from_logits=True)(c, c_hat)
-        loss += tf.keras.losses.mse(a, a_hat)
         return loss
 
     def calc_generator_loss(self, fake_result):
@@ -187,18 +182,18 @@ class infoGAN_digits():
 
     def discrimate(self, data, train):
         mid, discrimination = self.discriminator(data, training=train)
-        analog, classify = self.quaility_control(mid)
-        return discrimination, analog, classify
+        classify = self.quaility_control(mid)
+        return discrimination, classify
 
     def train_step(self, image, batch_size):
+        z, cat = self.generator_input(batch_size)
         with tf.GradientTape() as generator_tape, tf.GradientTape() as discriminator_tape:
-            z, ctn, cat = self.generator_input(batch_size)
-            generator_images = gan.generator([z, ctn, cat], training=True)
+            generator_images = gan.generator([z, cat], training=True)
 
-            dis_fake, qc_analog, qc_classify = self.discrimate(generator_images, train=True)
-            dis_real, _, _ = self.discrimate(image, train=True)
+            dis_fake, qc_classify = self.discrimate(generator_images, train=True)
+            dis_real, _ = self.discrimate(image, train=True)
 
-            info_loss = self.calc_info_loss(cat, qc_classify, ctn, qc_analog)
+            info_loss = self.calc_info_loss(cat, qc_classify)
             generator_loss = self.calc_generator_loss(dis_fake)
             discriminator_loss = self.calc_discriminator_loss(dis_real, dis_fake)
 
@@ -272,8 +267,8 @@ class infoGAN_digits():
         return
 
     def generate_image(self, batch, digit):
-        z, a, c = self.generator_input(batch, digit)
-        result = self.generator([z, a, c], training=False)
+        z, c = self.generator_input(batch, digit)
+        result = self.generator([z, c], training=False)
         result = np.array(result)
         result = result * (255 / 2) + (255 / 2)
         result = result.astype(int)
@@ -366,7 +361,7 @@ class infoGAN_digits():
 if __name__ == "__main__":
     if platform.system() == "Linux":
         os.nice(19)
-    gan = infoGAN_digits(70, 0, 10, 1000)
+    gan = infoGAN_digits(70, 10, 1000)
     gan.load_model()
     dataset = gan.process_dataset()
     gan.train(dataset, batch_size=64, epochs=100)
