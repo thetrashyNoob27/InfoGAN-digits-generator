@@ -164,6 +164,28 @@ class Conditional_Discriminator(Model):
         return pred
 
 
+def my_ACGAN_Discriminator():
+    import tensorflow as tf
+    # input shape define
+    d_input = tf.keras.layers.Input(shape=(28, 28, 1), name="discriminator_input")
+
+    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same")(d_input)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.GlobalMaxPooling2D()(x)
+
+    mid = x
+    discriminate = tf.keras.layers.Dense(1)(mid)
+    classify = tf.keras.layers.Dense(10)(mid)
+
+    model = tf.keras.Model(inputs=d_input, outputs=[discriminate, classify])
+
+    return model
+
+
 class ACGAN_Discriminator(Model):
     def __init__(self):
         super().__init__()

@@ -4,12 +4,12 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 # generator model is the same with Cond-GAN
-from model import Conditional_Generator, ACGAN_Discriminator, my_Conditional_Generator
+from model import Conditional_Generator, ACGAN_Discriminator, my_Conditional_Generator, my_ACGAN_Discriminator
 
 
 def train(cfg, train_ds):
     # models
-    net_g, net_d = my_Conditional_Generator(128, 10), ACGAN_Discriminator()
+    net_g, net_d = my_Conditional_Generator(128, 10), my_ACGAN_Discriminator()
 
     # loss functions
     loss_fn = tf.keras.losses.BinaryCrossentropy(
@@ -106,8 +106,8 @@ def train(cfg, train_ds):
             # update gen metrics
             gen_loss_tracker.update_state(gen_loss)
 
-            #net_g.save("ACGAN-model-G.h5", save_format="h5")
-            #net_d.save("ACGAN-model-D.tf", save_format="tf")
+            # net_g.save("ACGAN-model-G.h5", save_format="h5")
+            # net_d.save("ACGAN-model-D.tf", save_format="tf")
 
         # generate and save sample images per epoch
         test_generated_imgs = net_g([latent_code4visualization, labels4visualization])
