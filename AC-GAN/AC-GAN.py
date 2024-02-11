@@ -14,80 +14,51 @@ np.random.seed(16)
 tf.random.set_seed(16)
 
 
-def build_generator(latent_dim, num_categories):
-    noise = tf.keras.layers.Input(shape=(latent_dim,))
-    category_input = tf.keras.layers.Input(shape=(num_categories,))
+def build_generator(latent_dim, label_dim):
+    # input shape define
+    latent_code_input = tf.keras.layers.Input(shape=(latent_dim,), name="latent_code")
+    label_input = tf.keras.layers.Input(shape=(1,), name="label")
 
-    x = tf.keras.layers.Concatenate()(
-        [noise, category_input])
-    gen = x
+    # label encode
+    label_encode = tf.keras.layers.Embedding(input_dim=label_dim, output_dim=30)(label_input)
+    label_encode = tf.keras.layers.Dense(units=7 * 7)(label_encode)
+    label_encode = tf.keras.layers.Reshape(target_shape=(7, 7, -1))(label_encode)
 
-    gen = tf.keras.layers.Dense(1024)(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
-    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
+    # latent code encode
+    latent_encode = tf.keras.layers.Dense(7 * 7 * 128)(latent_code_input)
+    latent_encode = tf.keras.layers.Reshape((7, 7, 128))(latent_encode)
 
-    n_nodes = 512 * 7 * 7
-    gen = tf.keras.layers.Dense(n_nodes)(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
-    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
-    gen = tf.keras.layers.Reshape((7, 7, 512))(gen)
-    gen = tf.keras.layers.Dropout(0.05)(gen)
-    # normal
-    gen = tf.keras.layers.Conv2D(128, (4, 4), padding='same')(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
-    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
-    gen = tf.keras.layers.Dropout(0.05)(gen)
-    # upsample to 14x14
-    gen = tf.keras.layers.Conv2DTranspose(64, (4, 4), strides=(2, 2), padding='same')(gen)
-    gen = tf.keras.layers.BatchNormalization()(gen)
-    gen = tf.keras.layers.LeakyReLU(alpha=0.1)(gen)
-    gen = tf.keras.layers.Dropout(0.05)(gen)
-    # upsample to 28x28
-    gen = tf.keras.layers.Conv2DTranspose(1, (4, 4), strides=(2, 2), padding='same')(gen)
-    # tanh output
-    generated_image = tf.keras.layers.Activation('tanh', name="generator_output")(gen)
+    # combine & gen image/data
+    x = tf.keras.layers.Concatenate(axis=-1)([latent_encode, label_encode])
+    x = tf.keras.layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2DTranspose(1, (7, 7), padding="same", activation="tanh", name="generated")(x)
 
-    return tf.keras.Model(inputs=[noise, category_input], outputs=generated_image)
+    model = tf.keras.Model(inputs=[latent_code_input, label_input], outputs=x)
+
+    return model
 
 
-def build_discriminator(input_shape):
-    dinput = tf.keras.layers.Input(shape=(input_shape))
-    x = dinput
+def build_discriminator():
+    # input shape define
+    d_input = tf.keras.layers.Input(shape=(28, 28, 1), name="discriminator_input")
 
-    # downsample to 14x14
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(x)
-    d = tf.keras.layers.BatchNormalization()(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
-    # downsample to 7x7
-    d = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding='same')(d)
-    d = tf.keras.layers.BatchNormalization()(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
+    x = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same")(d_input)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
+    x = tf.keras.layers.GlobalMaxPooling2D()(x)
 
-    # flatten feature maps
-    d = tf.keras.layers.Flatten()(d)
-    d = tf.keras.layers.Dense(100)(d)
-    d = tf.keras.layers.BatchNormalization()(d)
-    d = tf.keras.layers.LeakyReLU(alpha=0.1)(d)
-    mid = d
+    mid = x
+    discriminate = tf.keras.layers.Dense(1)(mid)
+    classify = tf.keras.layers.Dense(10)(mid)
 
-    discrimate = tf.keras.layers.Dense(1, activation='sigmoid', name="D_discrimination")(mid)
-    category_output = tf.keras.layers.Dense(10, activation='softmax', name="D_classify")(mid)
+    model = tf.keras.Model(inputs=d_input, outputs=[discriminate, classify])
 
-    d_model = tf.keras.Model(inputs=dinput, outputs=[discrimate, category_output])
-    # compile model
-    opt = tf.keras.optimizers.Adam()
-    d_model.compile(loss={"D_discrimination": tf.keras.losses.BinaryCrossentropy(), "D_classify": tf.keras.losses.CategoricalCrossentropy()}, optimizer=opt)
-    return d_model
-
-
-def build_gan(g_model, d_model):
-    for layer in d_model.layers:
-        if not isinstance(layer, tf.keras.layers.BatchNormalization):
-            layer.trainable = False
-    gan_output = d_model(g_model.output)
-    model = tf.keras.Model(inputs=g_model.input, outputs=gan_output)
-    opt = tf.keras.optimizers.Adam()
-    model.compile(loss=[tf.keras.losses.BinaryCrossentropy(), tf.keras.losses.CategoricalCrossentropy()], optimizer=opt)
     return model
 
 
@@ -123,6 +94,13 @@ def wassertein_loss(ytrue, yhat):
     return loss
 
 
+def gan_score(fake_discrime, real_discrime):
+    g_score = np.mean(fake_discrime)
+    real_discrime = np.mean(real_discrime)
+    d_score = np.mean([1 - g_score, real_discrime])
+    return g_score, d_score
+
+
 if __name__ == "__main__":
     remove_old_image()
     if platform.system() == "Linux":
@@ -131,8 +109,7 @@ if __name__ == "__main__":
     latent_dim = 60
     num_categories = 10
     generator = build_generator(latent_dim, num_categories)
-    discriminator = build_discriminator((28, 28, 1))
-    gan = build_gan(generator, discriminator)
+    discriminator = build_discriminator()
     # prepare dataset
     (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
     x = np.concatenate((x_train, x_test), axis=0)
@@ -146,8 +123,8 @@ if __name__ == "__main__":
     # (As per the previous example code)
 
     # Training parameters
-    epochs = 10000
-    batch_size = 64
+    epochs = 30
+    batch_size = 128
 
     # Training loop
     REPORT_PERIOD_SEC = 60
@@ -157,8 +134,8 @@ if __name__ == "__main__":
     d_score_log = []
     g_score_log = []
     trainCnt = 0
-    discriminator_optmizer = tf.keras.optimizers.Adam()
-    generator_optmizer = tf.keras.optimizers.SGD()
+    discriminator_optmizer = tf.keras.optimizers.Adam(learning_rate=0.0001)
+    generator_optmizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
     for epoch in range(epochs):
         indices = np.arange(0, x_train.shape[0])
         np.random.shuffle(indices)
@@ -172,41 +149,70 @@ if __name__ == "__main__":
 
             real_images = x_batchs[idx]
             real_label = y_batchs[idx]
-            real_label_oneHot = tf.keras.utils.to_categorical(real_label, num_categories)
-
             real_batch_size = real_images.shape[0]
 
             noise = np.random.normal(0, 1, (real_batch_size, latent_dim))
             sampled_categories = np.random.randint(0, num_categories, real_batch_size)
-            sampled_categories_one_hot = tf.keras.utils.to_categorical(sampled_categories, num_categories)
-            del sampled_categories
+
             valid = np.ones((real_batch_size, 1))
             fake = np.zeros((real_batch_size, 1))
 
-            testoutput = discriminator(real_images, training=False)
+            # train discriminator
+            with tf.GradientTape() as d_tape:
+                generated_data = generator([noise, sampled_categories])
 
-            d_loss_real = discriminator.train_on_batch(real_images, [valid, real_label_oneHot], return_dict=True)['loss']
-            fake_data = generator([noise, sampled_categories_one_hot], training=False)
-            d_loss_fake = discriminator.train_on_batch(fake_data, [fake, sampled_categories_one_hot], return_dict=True)['loss']
-            gan_loss = gan.train_on_batch([noise, sampled_categories_one_hot], [valid, sampled_categories_one_hot], return_dict=True)['loss']
-            d_loss = np.mean([d_loss_real, d_loss_fake])
+                # forward pass real and fake images
+                real_data_prediction, real_class_prediction = discriminator(real_images)
+                fake_data_prediction, fake_class_prediction = discriminator(generated_data)
 
-            d_loss_log.append(d_loss)
-            g_loss_log.append(gan_loss)
+                y_pred = tf.concat([real_data_prediction, fake_data_prediction], axis=0)
+                y_true = tf.concat([valid, fake], axis=0)
 
-            fake_discrime, _ = discriminator(fake_data, training=False)
-            g_score = np.mean(fake_discrime)
-            real_discrime, _ = discriminator(real_images, training=False)
-            real_discrime = np.mean(real_discrime)
-            d_score = np.mean([1 - g_score, real_discrime])
-            del fake_discrime
-            del _
-            del real_discrime
+                y_pred_class = tf.concat([real_class_prediction, fake_class_prediction], axis=0)
+                y_true_class = tf.concat([real_label, sampled_categories], axis=0)
 
-            g_score_log.append(g_score)
-            d_score_log.append(d_score)
+                # compute loss
+                disc_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.0)(y_true=y_true, y_pred=y_pred)
+                disc_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(y_true=y_true_class, y_pred=y_pred_class)
+                disc_loss = disc_fake_loss + disc_aux_loss
 
-            print("[%6d] d_loss:%10.4f(r%10.4f,f%10.4f) g_loss:%10.4f d_score:%10.4f g_score:%10.4f" % (trainCnt, d_loss, d_loss_real, d_loss_fake, gan_loss, d_score, g_score))
+                # score log
+                g_score, d_score = gan_score(fake_data_prediction, real_data_prediction)
+                d_score_log.append(d_score)
+                g_score_log.append(g_score)
+                d_loss_log.append(disc_loss)
+
+                # compute disc gradients
+            disc_gradients = d_tape.gradient(disc_loss, discriminator.trainable_variables)
+
+            # update disc weights
+            discriminator_optmizer.apply_gradients(zip(disc_gradients, discriminator.trainable_variables))
+
+            # PART 2: GEN TRAINING, fixed discriminator
+            noise = np.random.normal(0, 1, (real_batch_size, latent_dim))
+            sampled_categories = np.random.randint(0, num_categories, real_batch_size)
+            with tf.GradientTape() as g_tape:
+                generated_data = generator([noise, sampled_categories])
+
+                # forward pass only images
+                fake_preds, fake_class_preds = discriminator(generated_data)
+
+                # compute loss
+                gen_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.0)(y_true=tf.ones_like(fake_preds), y_pred=fake_preds)
+                gen_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(y_true=sampled_categories, y_pred=fake_class_preds)
+                gen_loss = gen_fake_loss + gen_aux_loss
+
+                # loss logger
+                g_loss_log.append(gen_loss)
+
+            # compute gen gradients
+            gen_gradients = g_tape.gradient(gen_loss, generator.trainable_variables)
+
+            # update gen weights
+            generator_optmizer.apply_gradients(zip(gen_gradients, generator.trainable_variables))
+
+            # report functions
+            print("[%6d] d_loss:%10.4f g_loss:%10.4f d_score:%10.4f g_score:%10.4f" % (trainCnt, d_loss_log[-1], g_loss_log[-1], d_score_log[-1], g_score_log[-1]))
 
             # Print progress
             plot_process = None
@@ -216,17 +222,15 @@ if __name__ == "__main__":
 
                 # plot image process
                 noise = np.random.normal(0, 1, (100, latent_dim))
-                cat_array = np.zeros((100, num_categories))
+                cat_array = np.zeros((100, 1))
                 for i in range(0, 100):
                     idx = i // num_categories
-                cat_array[i, idx] = 1
+                    cat_array[i, 0] = idx
                 sampled_categories = cat_array
                 del cat_array
 
                 generated_images = generator.predict([noise, sampled_categories], verbose=0)
 
-
-                # print(generated_images.shape)#(100, 28, 28, 1)
 
                 def _plot(generated, epoch, d_loss_log, g_loss_log):
                     fig, ax = plt.subplots(2, 1, dpi=300, figsize=(16, 9))
@@ -243,7 +247,7 @@ if __name__ == "__main__":
                     _plot_idx = 1
                     ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
                     ax[_plot_idx].plot(_x, g_score_log, label="generator score")
-                    ax[_plot_idx].set_ylim(0, 1)
+                    # ax[_plot_idx].set_ylim(0, 1)
                     ax[_plot_idx].set_xlabel("epoch/tick")
                     ax[_plot_idx].set_ylabel('score')
                     ax[_plot_idx].set_title('D-G score')
