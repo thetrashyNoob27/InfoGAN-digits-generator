@@ -4,13 +4,12 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 # generator model is the same with Cond-GAN
-from model import Conditional_Generator, ACGAN_Discriminator
+from model import Conditional_Generator, ACGAN_Discriminator, my_Conditional_Generator
 
 
 def train(cfg, train_ds):
-
     # models
-    net_g, net_d = Conditional_Generator(), ACGAN_Discriminator()
+    net_g, net_d = my_Conditional_Generator(128, 10), ACGAN_Discriminator()
 
     # loss functions
     loss_fn = tf.keras.losses.BinaryCrossentropy(
@@ -41,14 +40,13 @@ def train(cfg, train_ds):
     for epoch in range(cfg['epochs']):
 
         for _, (real_imgs, real_lbls) in train_ds.enumerate():
-
             # PART 1: DISC TRAINING, fixed generator
             latent_code = tf.random.normal(shape=(real_imgs.shape[0],
                                                   latent_code_size))
 
             with tf.GradientTape() as disc_tape:
                 # generate fake images
-                generated_imgs = net_g(latent_code, real_lbls)
+                generated_imgs = net_g([latent_code, real_lbls])
 
                 # forward pass real and fake images
                 real_preds, real_class_preds = net_d(real_imgs)
@@ -85,7 +83,7 @@ def train(cfg, train_ds):
 
             with tf.GradientTape() as gen_tape:
                 # generate fake images
-                generated_imgs = net_g(latent_code, real_lbls)
+                generated_imgs = net_g([latent_code, real_lbls])
 
                 # forward pass only images
                 fake_preds, fake_class_preds = net_d(generated_imgs)
@@ -108,16 +106,15 @@ def train(cfg, train_ds):
             # update gen metrics
             gen_loss_tracker.update_state(gen_loss)
 
-            net_g.save("ACGAN-model-G.tf", save_format="tf")
-            net_d.save("ACGAN-model-D.tf", save_format="tf")
+            #net_g.save("ACGAN-model-G.h5", save_format="h5")
+            #net_d.save("ACGAN-model-D.tf", save_format="tf")
 
         # generate and save sample images per epoch
-        test_generated_imgs = net_g(latent_code4visualization,
-                                    labels4visualization)
-        test_generated_imgs = (((test_generated_imgs+1.)/2.) * 255.).numpy()
+        test_generated_imgs = net_g([latent_code4visualization, labels4visualization])
+        test_generated_imgs = (((test_generated_imgs + 1.) / 2.) * 255.).numpy()
         plt.figure(figsize=(5, 5))
         for i in range(test_generated_imgs.shape[0]):
-            plt.subplot(5, 5, i+1)
+            plt.subplot(5, 5, i + 1)
             plt.imshow(test_generated_imgs[i, :, :, 0], cmap='gray')
             plt.axis('off')
         plt.savefig(os.path.join(
