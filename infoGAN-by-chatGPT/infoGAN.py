@@ -233,10 +233,10 @@ if __name__ == "__main__":
                     next_report_time += REPORT_PERIOD_SEC
                     print("[%d] D_loss%10.4f: G_loss:%10.4f" % (trainCnt, d_loss_log[-1], g_loss_log[-1]))
 
-                    # save model
-                    generator.save("infoGAN-model-G.tf", save_format="tf")
-                    discriminator.save("infoGAN-model-D.tf", save_format="tf")
-                    quility_control.save("infoGAN-model-Q.tf", save_format="tf")
+                        # save model
+                        generator.save("infoGAN-model-G.tf", save_format="tf")
+                        discriminator.save("infoGAN-model-D.tf", save_format="tf")
+                        quility_control.save("infoGAN-model-Q.tf", save_format="tf")
 
                     # plot image process
                     noise = np.random.normal(0, 1, (100, latent_dim))

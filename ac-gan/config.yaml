@@ -1,0 +1,17 @@
+# experiment
+model: ac_gan # simple_gan, cond_gan, ac_gan
+experiment_name: lblsmo00_glr0002_dlr0001_g13m_d390k
+
+# checkpoint
+log_dir: '../logs'
+img_save_dir: '../generated_imgs'
+
+# training
+epochs: 30
+batch_size: 128
+latent_code_size: 128
+label_smoothing: 0.0
+g_lr: 0.0002
+d_lr: 0.0001
+
+
