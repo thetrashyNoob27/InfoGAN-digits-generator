@@ -194,8 +194,6 @@ if __name__ == "__main__":
             discriminator_optmizer.apply_gradients(zip(disc_gradients, discriminator.trainable_variables))
 
             # PART 2: GEN TRAINING, fixed discriminator
-            noise = np.random.normal(0, 1, (real_batch_size, latent_dim))
-            sampled_categories = np.random.randint(0, num_categories, real_batch_size)
             with tf.GradientTape() as g_tape:
                 generated_data = generator([noise, sampled_categories])
 
@@ -252,6 +250,7 @@ if __name__ == "__main__":
                     _plot_idx = 1
                     ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
                     ax[_plot_idx].plot(_x, g_score_log, label="generator score")
+                    ax[_plot_idx].axhline(y=0.5, color='magenta', linestyle='--', label="50%")
                     ax[_plot_idx].set_ylim(0, 1)
                     ax[_plot_idx].set_xlabel("epoch/tick")
                     ax[_plot_idx].set_ylabel('score')
