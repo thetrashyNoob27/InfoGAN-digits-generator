@@ -31,8 +31,10 @@ def build_generator(latent_dim, label_dim):
     # combine & gen image/data
     x = tf.keras.layers.Concatenate(axis=-1)([latent_encode, label_encode])
     x = tf.keras.layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     x = tf.keras.layers.Conv2DTranspose(128, kernel_size=4, strides=2, padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     x = tf.keras.layers.Conv2DTranspose(1, (7, 7), padding="same", activation="tanh", name="generated")(x)
 
@@ -46,16 +48,19 @@ def build_discriminator():
     d_input = tf.keras.layers.Input(shape=(28, 28, 1), name="discriminator_input")
 
     x = tf.keras.layers.Conv2D(64, (4, 4), strides=(2, 2), padding="same")(d_input)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     x = tf.keras.layers.Conv2D(128, (4, 4), strides=(2, 2), padding="same")(x)
+    x = tf.keras.layers.BatchNormalization()(x)
     x = tf.keras.layers.LeakyReLU(alpha=0.2)(x)
     x = tf.keras.layers.GlobalMaxPooling2D()(x)
 
     mid = x
-    discriminate = tf.keras.layers.Dense(1)(mid)
-    classify = tf.keras.layers.Dense(10)(mid)
+    discriminate = tf.keras.layers.Dense(1, activation="sigmoid")(mid)
+    classify = tf.keras.layers.Dense(10, activation="softmax")(mid)
 
     model = tf.keras.Model(inputs=d_input, outputs=[discriminate, classify])
 
@@ -172,8 +177,8 @@ if __name__ == "__main__":
                 y_true_class = tf.concat([real_label, sampled_categories], axis=0)
 
                 # compute loss
-                disc_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.0)(y_true=y_true, y_pred=y_pred)
-                disc_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(y_true=y_true_class, y_pred=y_pred_class)
+                disc_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=False, label_smoothing=0.0)(y_true=y_true, y_pred=y_pred)
+                disc_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)(y_true=y_true_class, y_pred=y_pred_class)
                 disc_loss = disc_fake_loss + disc_aux_loss
 
                 # score log
@@ -198,8 +203,8 @@ if __name__ == "__main__":
                 fake_preds, fake_class_preds = discriminator(generated_data)
 
                 # compute loss
-                gen_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=True, label_smoothing=0.0)(y_true=tf.ones_like(fake_preds), y_pred=fake_preds)
-                gen_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)(y_true=sampled_categories, y_pred=fake_class_preds)
+                gen_fake_loss = tf.keras.losses.BinaryCrossentropy(from_logits=False, label_smoothing=0.0)(y_true=tf.ones_like(fake_preds), y_pred=fake_preds)
+                gen_aux_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)(y_true=sampled_categories, y_pred=fake_class_preds)
                 gen_loss = gen_fake_loss + gen_aux_loss
 
                 # loss logger
@@ -247,7 +252,7 @@ if __name__ == "__main__":
                     _plot_idx = 1
                     ax[_plot_idx].plot(_x, d_score_log, label="discriminator score")
                     ax[_plot_idx].plot(_x, g_score_log, label="generator score")
-                    # ax[_plot_idx].set_ylim(0, 1)
+                    ax[_plot_idx].set_ylim(0, 1)
                     ax[_plot_idx].set_xlabel("epoch/tick")
                     ax[_plot_idx].set_ylabel('score')
                     ax[_plot_idx].set_title('D-G score')
